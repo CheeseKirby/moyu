@@ -1,0 +1,7 @@
+FFmpeg portable binary
+Version: 9.0.1 essentials build
+Source build provider: https://www.gyan.dev/ffmpeg/builds/
+Upstream project: https://ffmpeg.org/
+The downloaded archive SHA-256 was verified against the provider's published checksum.
+Only ffmpeg.exe is retained; the archive and unused files were removed.
+FFmpeg is distributed under its applicable free-software licenses. Run `ffmpeg.exe -L` for the complete license text compiled into this binary.

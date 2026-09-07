@@ -1,0 +1,13 @@
+{
+  "Package": "whisper-1.8.4-windows-x64.zip",
+  "ReleaseTag": "v1.8.4.1",
+  "ReleaseCommit": "07db6c4cfd98042cbd81ed48f50a5ceb1167f45e",
+  "WhisperCppCommit": "3e9b7d0fef3528ee2208da3cdb873a2c53d2ae2f",
+  "BuildOption": "GGML_VULKAN=1",
+  "DownloadedUtc": "2026-09-03T10:58:27.0197604Z",
+  "PackageSha256": "4B1B36343FEB55EC3DEACE6A7DD18CC217F43A55E4ECCE76CCD4EE3595C0B642",
+  "ExeSha256": "7651EA57A1585D683946C12EE5617DBCA0F46B4D718ABD77490604786D114BB2",
+  "DefenderScan": "No threats found",
+  "Authenticode": "NotSigned",
+  "Source": "https://github.com/jiang1997/whisper.cpp-release"
+}

@@ -1,0 +1,26 @@
+# Build output
+AI-Subtitle-Worker.exe
+AI-Subtitle-Worker.pdb
+*.rollback.exe
+*.rollback.pdb
+
+# Local configuration and runtime data
+Config/
+Cache/
+Queue/
+Logs/
+hub/
+
+# Large third-party binaries and models
+Tools/**/*.exe
+Tools/**/*.dll
+Tools/**/*.bin
+
+# Editor and OS files
+.vs/
+bin/
+obj/
+*.user
+*.suo
+Thumbs.db
+.DS_Store
