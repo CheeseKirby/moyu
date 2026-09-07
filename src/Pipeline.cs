@@ -36,19 +36,21 @@ namespace PotPlayerAiSubtitle
             string fingerprint = ContentFingerprint.Compute(mediaPath);
             cancellation.ThrowIfCancellationRequested();
 
-            string cacheDir = Path.Combine(StoragePaths.Cache, fingerprint);
+            string language = config.SourceLanguage;
+            string cacheDir = SourceLanguages.CacheDirectory(Path.Combine(StoragePaths.Cache, fingerprint), language);
             Directory.CreateDirectory(cacheDir);
             string manifestPath = Path.Combine(cacheDir, "manifest.json");
-            string rawJapanesePath = Path.Combine(cacheDir, "ja.raw.srt");
-            string candidateJapanesePath = Path.Combine(cacheDir, "ja.candidate.srt");
+            string rawSourcePath = Path.Combine(cacheDir, language + ".raw.srt");
+            string candidateSourcePath = Path.Combine(cacheDir, language + ".candidate.srt");
             string qualityReportPath = Path.Combine(cacheDir, "quality-report.json");
-            string japanesePath = Path.Combine(cacheDir, "ja.srt");
+            string sourcePath = Path.Combine(cacheDir, language + ".srt");
             string chinesePath = Path.Combine(cacheDir, "zh-CN.srt");
-            string bilingualPath = Path.Combine(cacheDir, "ja-zh-CN.srt");
+            string bilingualPath = Path.Combine(cacheDir, language + "-zh-CN.srt");
             string translationStatePath = Path.Combine(cacheDir, "translation-state.json");
 
             JobManifest manifest = AtomicJson.Read<JobManifest>(manifestPath, new JobManifest());
-            manifest.Version = "2";
+            manifest.Version = "3";
+            manifest.SourceLanguage = language;
             manifest.Fingerprint = fingerprint;
             manifest.FileSize = new FileInfo(mediaPath).Length;
             if (string.IsNullOrEmpty(manifest.FirstSeenPath)) manifest.FirstSeenPath = mediaPath;
@@ -64,7 +66,7 @@ namespace PotPlayerAiSubtitle
                 AtomicJson.Write(manifestPath, manifest);
                 Report("已命中字幕缓存", "找到相同视频内容的完整字幕。", 100);
                 string currentPath = FindMatchingCurrentMedia(fingerprint, mediaPath);
-                SubtitlePublishResult published = SubtitlePublisher.Publish(config, currentPath, japanesePath, chinesePath, bilingualPath);
+                SubtitlePublishResult published = SubtitlePublisher.Publish(config, currentPath, sourcePath, chinesePath, bilingualPath);
                 return new PipelineResult
                 {
                     Fingerprint = fingerprint,
@@ -77,12 +79,12 @@ namespace PotPlayerAiSubtitle
 
             try
             {
-                manifest.Status = "preparing-japanese";
+                manifest.Status = "preparing-source";
                 AtomicJson.Write(manifestPath, manifest);
-                PrepareJapaneseSubtitle(mediaPath, cacheDir, rawJapanesePath, candidateJapanesePath, qualityReportPath, japanesePath, manifest, cancellation);
+                PrepareSourceSubtitle(mediaPath, cacheDir, rawSourcePath, candidateSourcePath, qualityReportPath, sourcePath, manifest, cancellation);
 
-                List<SubtitleCue> cues = SrtFile.Read(japanesePath);
-                if (cues.Count == 0) throw new InvalidDataException("没有从日语字幕中读取到有效对白。");
+                List<SubtitleCue> cues = SrtFile.Read(sourcePath);
+                if (cues.Count == 0) throw new InvalidDataException("没有从源语言字幕中读取到有效对白。");
 
                 TranslationState state = AtomicJson.Read<TranslationState>(translationStatePath, new TranslationState());
                 if (state.Translations == null) state.Translations = new Dictionary<string, string>();
@@ -99,7 +101,7 @@ namespace PotPlayerAiSubtitle
                     TranslateAllScenes(cues, state, translationStatePath, cancellation);
                 }
 
-                Report("正在生成字幕文件", "同时保存简体中文和日中双语字幕。", 96);
+                Report("正在生成字幕文件", "同时保存简体中文和双语字幕。", 96);
                 SrtFile.Write(chinesePath, cues, state.Translations, false);
                 SrtFile.Write(bilingualPath, cues, state.Translations, true);
 
@@ -110,7 +112,7 @@ namespace PotPlayerAiSubtitle
 
                 string matchingPath = FindMatchingCurrentMedia(fingerprint, mediaPath);
                 Report("正在整理字幕文件", "视频旁保留双语字幕，并归档三种字幕版本。", 98);
-                SubtitlePublishResult published = SubtitlePublisher.Publish(config, matchingPath, japanesePath, chinesePath, bilingualPath);
+                SubtitlePublishResult published = SubtitlePublisher.Publish(config, matchingPath, sourcePath, chinesePath, bilingualPath);
                 Report("字幕处理完成", "双语字幕已保存到视频旁；字幕加载由 PotPlayer 负责。", 100);
                 return new PipelineResult
                 {
@@ -139,35 +141,35 @@ namespace PotPlayerAiSubtitle
             }
         }
 
-        private void PrepareJapaneseSubtitle(string mediaPath, string cacheDir, string rawJapanesePath,
-            string candidateJapanesePath, string qualityReportPath, string japanesePath, JobManifest manifest, CancellationToken cancellation)
+        private void PrepareSourceSubtitle(string mediaPath, string cacheDir, string rawSourcePath,
+            string candidateSourcePath, string qualityReportPath, string sourcePath, JobManifest manifest, CancellationToken cancellation)
         {
-            if (File.Exists(japanesePath) && SrtFile.Read(japanesePath).Count > 0)
+            if (File.Exists(sourcePath) && SrtFile.Read(sourcePath).Count > 0)
             {
-                Report("已找到日语字幕", "继续上次未完成的任务。", 38);
+                Report("已找到源语言字幕", "继续上次未完成的任务。", 38);
                 return;
             }
 
-            if (TryRecoverExistingCandidate(cacheDir, candidateJapanesePath, qualityReportPath, japanesePath, manifest)) return;
+            if (TryRecoverExistingCandidate(cacheDir, candidateSourcePath, qualityReportPath, sourcePath, manifest)) return;
 
-            JapaneseSubtitleRecognizer recognizer = new JapaneseSubtitleRecognizer(config, Report);
-            RecognitionCandidateResult result = recognizer.Prepare(mediaPath, cacheDir, rawJapanesePath,
-                candidateJapanesePath, qualityReportPath, cancellation);
+            SourceSubtitleRecognizer recognizer = new SourceSubtitleRecognizer(config, Report);
+            RecognitionCandidateResult result = recognizer.Prepare(mediaPath, cacheDir, rawSourcePath,
+                candidateSourcePath, qualityReportPath, cancellation);
             manifest.SourceKind = result.SourceKind;
             SubtitleQualityDecision decision = SubtitleQuality.EvaluateForTranslation(result.QualityReport);
             AtomicJson.Write(qualityReportPath, result.QualityReport);
             ApplyQualityDecision(manifest, decision);
             if (result.QualityReport.GateApplied && !decision.CanContinue)
             {
-                throw new RecognitionQualityException(decision.Reason + " 已保留 ja.candidate.srt 和 quality-report.json，不会调用翻译 API。");
+                throw new RecognitionQualityException(decision.Reason + " 已保留候选字幕和 quality-report.json，不会调用翻译 API。");
             }
 
-            File.Copy(candidateJapanesePath, japanesePath, true);
+            File.Copy(candidateSourcePath, sourcePath, true);
             if (decision.HasWarning) Report("识别结果已自动修复", decision.Reason, 44);
-            JapaneseSubtitleRecognizer.DeleteAcceptedAudio(result);
+            SourceSubtitleRecognizer.DeleteAcceptedAudio(result);
         }
 
-        private bool TryRecoverExistingCandidate(string cacheDir, string candidatePath, string reportPath, string japanesePath, JobManifest manifest)
+        private bool TryRecoverExistingCandidate(string cacheDir, string candidatePath, string reportPath, string sourcePath, JobManifest manifest)
         {
             if (!File.Exists(candidatePath) || !File.Exists(reportPath)) return false;
             List<SubtitleCue> candidate = SrtFile.Read(candidatePath);
@@ -190,7 +192,7 @@ namespace PotPlayerAiSubtitle
             AtomicJson.Write(reportPath, report);
             if (!decision.CanContinue) return false;
 
-            SrtFile.Write(japanesePath, sanitized.Cues, null, false);
+            SrtFile.Write(sourcePath, sanitized.Cues, null, false);
             ApplyQualityDecision(manifest, decision);
             Report("正在恢复上次的识别结果", decision.Reason, 44);
             string audioPath = Path.Combine(cacheDir, "audio-16k.wav");

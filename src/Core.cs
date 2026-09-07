@@ -11,6 +11,12 @@ namespace PotPlayerAiSubtitle
     {
         public string ApiBaseUrl { get; set; }
         public string Model { get; set; }
+        private string sourceLanguage;
+        public string SourceLanguage
+        {
+            get { return SourceLanguages.Normalize(sourceLanguage); }
+            set { sourceLanguage = SourceLanguages.Normalize(value); }
+        }
         public string FfmpegPath { get; set; }
         public string WhisperPath { get; set; }
         public string WhisperModelPath { get; set; }
@@ -34,6 +40,7 @@ namespace PotPlayerAiSubtitle
             {
                 ApiBaseUrl = "https://api.deepseek.com",
                 Model = "deepseek-v4-flash-vision-exp",
+                SourceLanguage = "ja",
                 FfmpegPath = Path.Combine(root, "Tools", "ffmpeg.exe"),
                 WhisperPath = Path.Combine(root, "Tools", "Whisper", "Vulkan", "whisper-cli.exe"),
                 WhisperModelPath = Path.Combine(playerRoot, "Model", "ggml-large-v3-turbo.bin"),
@@ -118,6 +125,12 @@ namespace PotPlayerAiSubtitle
 
     internal sealed class JobRequest
     {
+        private string sourceLanguage;
+        public string SourceLanguage
+        {
+            get { return SourceLanguages.Normalize(sourceLanguage); }
+            set { sourceLanguage = SourceLanguages.Normalize(value); }
+        }
         public string MediaPath { get; set; }
         public string RequestedUtc { get; set; }
     }
@@ -136,6 +149,7 @@ namespace PotPlayerAiSubtitle
         public string FirstSeenPath { get; set; }
         public string LastSeenPath { get; set; }
         public string SourceKind { get; set; }
+        public string SourceLanguage { get; set; }
         public string RecognitionModel { get; set; }
         public string TranslationModel { get; set; }
         public string Status { get; set; }

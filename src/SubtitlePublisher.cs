@@ -27,6 +27,8 @@ namespace PotPlayerAiSubtitle
 
             string mediaName = Path.GetFileNameWithoutExtension(mediaPath);
             string safeName = MakeSafeFileName(mediaName);
+            string cacheDirectory = Path.GetDirectoryName(bilingualPath);
+            string videoCacheDirectory = config.SourceLanguage == "ja" ? cacheDirectory : Directory.GetParent(cacheDirectory).FullName;
 
             if (config.CopyFinishedSubtitlesBesideMedia)
             {
@@ -38,7 +40,8 @@ namespace PotPlayerAiSubtitle
                     if (File.Exists(sidecar)
                         && !sidecarMatchesBilingual
                         && !FilesEqual(sidecar, sourcePath)
-                        && !FilesEqual(sidecar, chinesePath))
+                        && !FilesEqual(sidecar, chinesePath)
+                        && !IsGeneratedBilingual(sidecar, videoCacheDirectory))
                     {
                         warnings.Add("视频旁已有非本工具生成的同名字幕，为避免覆盖，双语字幕只归档到字幕库");
                     }
@@ -82,6 +85,18 @@ namespace PotPlayerAiSubtitle
 
             result.Warning = warnings.Count == 0 ? null : string.Join("；", warnings.ToArray());
             return result;
+        }
+
+        internal static bool IsGeneratedBilingual(string path, string videoCacheDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(videoCacheDirectory) || !File.Exists(path)) return false;
+            foreach (SourceLanguageOption language in SourceLanguages.Options)
+            {
+                string generated = Path.Combine(SourceLanguages.CacheDirectory(videoCacheDirectory, language.Code),
+                    language.Code + "-zh-CN.srt");
+                if (FilesEqual(path, generated)) return true;
+            }
+            return false;
         }
 
         private static string MakeSafeFileName(string value)

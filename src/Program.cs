@@ -12,7 +12,7 @@ namespace PotPlayerAiSubtitle
 {
     internal static class Program
     {
-        internal const string AppMutexName = "Local\\PotPlayerAiSubtitleApp-v2";
+        internal const string AppMutexName = WatcherContract.AppMutexName;
         private const string WakeEventName = "Local\\PotPlayerAiSubtitleAppWake-v2";
 
         [STAThread]
@@ -34,7 +34,9 @@ namespace PotPlayerAiSubtitle
                 if (args.Length > 0 &&
                     (string.Equals(args[0], "--wait-for-potplayer", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(args[0], "wait-for-potplayer", StringComparison.OrdinalIgnoreCase)))
-                    return PotPlayerStartupWatcher.Run();
+                    { StartupManager.EnsureRunning(); return 0; }
+                if (args.Length == 1 && args[0] == "--sync-watcher")
+                { StartupManager.SetEnabled(AppConfig.Load().StartWithWindows); return 0; }
 
                 bool startHidden = false;
                 bool openSettings = false;
@@ -109,87 +111,6 @@ namespace PotPlayerAiSubtitle
         }
     }
 
-    internal static class PotPlayerStartupWatcher
-    {
-        private const string WatcherMutexName = "Local\\PotPlayerAiSubtitleStartupWatcher-v1";
-        private static readonly string[] PlayerProcessNames = { "PotPlayerMini64", "PotPlayerMini", "PotPlayer64", "PotPlayer" };
-
-        public static int Run()
-        {
-            bool created;
-            using (Mutex mutex = new Mutex(true, WatcherMutexName, out created))
-            {
-                if (!created) return 0;
-                Logger.Write("PotPlayer startup watcher is waiting.");
-                while (true)
-                {
-                    if (IsMainApplicationRunning()) return 0;
-                    if (IsPotPlayerRunning())
-                    {
-                        Logger.Write("PotPlayer detected; starting subtitle tool.");
-                        StartMainApplication();
-                        return 0;
-                    }
-                    Thread.Sleep(1000);
-                }
-            }
-        }
-
-        internal static bool IsPotPlayerProcessName(string processName)
-        {
-            return PlayerProcessNames.Any(delegate(string name) { return string.Equals(name, processName, StringComparison.OrdinalIgnoreCase); });
-        }
-
-        private static bool IsMainApplicationRunning()
-        {
-            try
-            {
-                using (Mutex.OpenExisting(Program.AppMutexName)) return true;
-            }
-            catch (WaitHandleCannotBeOpenedException)
-            {
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static bool IsPotPlayerRunning()
-        {
-            int currentSessionId;
-            using (Process current = Process.GetCurrentProcess()) currentSessionId = current.SessionId;
-            foreach (string name in PlayerProcessNames)
-            {
-                foreach (Process process in Process.GetProcessesByName(name))
-                {
-                    try
-                    {
-                        if (!process.HasExited && process.SessionId == currentSessionId) return true;
-                    }
-                    catch { }
-                    finally { process.Dispose(); }
-                }
-            }
-            return false;
-        }
-
-        private static void StartMainApplication()
-        {
-            ProcessStartInfo info = new ProcessStartInfo
-            {
-                FileName = Application.ExecutablePath,
-                Arguments = "--tray",
-                WorkingDirectory = StoragePaths.Root,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden
-            };
-            using (Process process = Process.Start(info)) { }
-        }
-    }
-
     internal static class DetectionInbox
     {
         public static void Publish(string mediaPath)
@@ -217,6 +138,11 @@ namespace PotPlayerAiSubtitle
     {
         public static void Notify(string mediaPath)
         {
+            Notify(mediaPath, AppConfig.Load().SourceLanguage);
+        }
+
+        public static void Notify(string mediaPath, string sourceLanguage)
+        {
             string fullPath = Path.GetFullPath(mediaPath);
             CurrentMediaState current = new CurrentMediaState
             {
@@ -229,9 +155,10 @@ namespace PotPlayerAiSubtitle
             JobRequest request = new JobRequest
             {
                 MediaPath = fullPath,
-                RequestedUtc = DateTime.UtcNow.ToString("o")
+                RequestedUtc = DateTime.UtcNow.ToString("o"),
+                SourceLanguage = sourceLanguage
             };
-            string requestPath = Path.Combine(StoragePaths.Queue, "request-" + HashPath(fullPath) + ".json");
+            string requestPath = Path.Combine(StoragePaths.Queue, "request-" + HashPath(fullPath + "|" + request.SourceLanguage) + ".json");
             AtomicJson.Write(requestPath, request);
         }
 
@@ -273,12 +200,13 @@ namespace PotPlayerAiSubtitle
         {
             AppConfig config = AppConfig.Load();
             string fingerprint = ContentFingerprint.Compute(mediaPath);
-            string cacheDir = Path.Combine(StoragePaths.Cache, fingerprint);
+            string language = config.SourceLanguage;
+            string cacheDir = SourceLanguages.CacheDirectory(Path.Combine(StoragePaths.Cache, fingerprint), language);
             Directory.CreateDirectory(cacheDir);
-            string rawPath = Path.Combine(cacheDir, "ja.candidate.raw.srt");
-            string candidatePath = Path.Combine(cacheDir, "ja.candidate.srt");
+            string rawPath = Path.Combine(cacheDir, language + ".candidate.raw.srt");
+            string candidatePath = Path.Combine(cacheDir, language + ".candidate.srt");
             string reportPath = Path.Combine(cacheDir, "quality-report.json");
-            JapaneseSubtitleRecognizer recognizer = new JapaneseSubtitleRecognizer(config,
+            SourceSubtitleRecognizer recognizer = new SourceSubtitleRecognizer(config,
                 delegate(string stage, string detail, int percent)
                 {
                     Logger.Write(string.Format("Candidate {0}% {1}: {2}", percent, stage, detail));
@@ -397,6 +325,7 @@ namespace PotPlayerAiSubtitle
                 if (SubtitleQuality.EvaluateForTranslation(fatalReport).CanContinue)
                     throw new Exception("严重时间轴异常阻断测试失败。");
                 results.Add("PASS severe timeline errors remain blocked");
+                SourceLanguageSelfTest.Run(tempRoot, results);
                 success = true;
             }
             catch (Exception ex)

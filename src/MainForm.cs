@@ -11,7 +11,7 @@ using Microsoft.Win32;
 
 namespace PotPlayerAiSubtitle
 {
-    internal sealed class MainForm : Form
+    internal sealed partial class MainForm : Form
     {
         private static readonly Color PageColor = MoyuPalette.Page;
         private static readonly Color TextColor = MoyuPalette.Ink;
@@ -50,6 +50,7 @@ namespace PotPlayerAiSubtitle
         private readonly TextBox apiUrlBox;
         private readonly TextBox apiKeyBox;
         private readonly TextBox modelBox;
+        private readonly SourceLanguageComboBox sourceLanguageBox;
         private readonly TextBox hubPathBox;
         private readonly Label apiStoredLabel;
         private readonly Label settingsStatusLabel;
@@ -64,160 +65,8 @@ namespace PotPlayerAiSubtitle
         private volatile bool shuttingDown;
         private bool allowClose;
         private string activeMediaPath = "";
+        private string activeSourceLanguage = "ja";
         private string detectedMediaPath = "";
-
-        public MainForm(bool startHidden, bool openSettings, EventWaitHandle wakeEvent)
-        {
-            this.startHidden = startHidden;
-            this.openSettings = openSettings;
-            this.wakeEvent = wakeEvent;
-
-            Text = "魔芋";
-            ClientSize = new Size(920, 760);
-            FormBorderStyle = FormBorderStyle.FixedSingle;
-            MaximizeBox = false;
-            StartPosition = FormStartPosition.CenterScreen;
-            BackColor = PageColor;
-            Font = new Font("Microsoft YaHei UI", 9F);
-            AutoScaleMode = AutoScaleMode.Dpi;
-            Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Information;
-
-            MoyuHeaderPanel header = new MoyuHeaderPanel { Dock = DockStyle.Top, Height = 124 };
-            appStatusLabel = CreateLabel("正在准备", 740, 34, 146, 36, 9F, FontStyle.Bold, Color.White);
-            appStatusLabel.TextAlign = ContentAlignment.MiddleCenter;
-            appStatusLabel.BackColor = Color.FromArgb(8, 99, 164);
-            MoyuDrawing.RoundControl(appStatusLabel, 18);
-            appStatusLabel.SizeChanged += delegate { MoyuDrawing.RoundControl(appStatusLabel, appStatusLabel.Height / 2); };
-            header.Controls.Add(appStatusLabel);
-
-            tabs = new MoyuTabControl { Dock = DockStyle.Fill, Font = new Font(Font.FontFamily, 10F), BackColor = PageColor };
-            taskTab = new TabPage("字幕任务") { BackColor = PageColor, Padding = new Padding(18) };
-            settingsTab = new TabPage("模型设置") { BackColor = PageColor, Padding = new Padding(18) };
-            tabs.TabPages.Add(taskTab);
-            tabs.TabPages.Add(settingsTab);
-
-            taskCanvas = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = PageColor };
-            taskTab.Controls.Add(taskCanvas);
-
-            detectedCard = NewCard(0, 0, 820, 122, Color.FromArgb(255, 251, 232));
-            detectedCard.BorderColor = Color.FromArgb(244, 205, 122);
-            detectedCard.AccentColor = MoyuPalette.Yellow;
-            detectedCard.Visible = false;
-            detectedCard.Controls.Add(CreateLabel("PotPlayer 正在播放", 22, 14, 260, 23, 9F, FontStyle.Bold, WarningColor));
-            detectedNameLabel = CreateLabel("", 20, 39, 540, 27, 11F, FontStyle.Bold, TextColor);
-            detectedNameLabel.AutoEllipsis = true;
-            detectedPathLabel = CreateLabel("", 20, 70, 540, 24, 8.5F, FontStyle.Regular, MutedColor);
-            detectedPathLabel.AutoEllipsis = true;
-            Button acceptDetected = CreateButton("开始生成", MoyuPalette.Red, Color.White, 660, 20, 140, 38);
-            acceptDetected.Click += delegate { if (!string.IsNullOrEmpty(detectedMediaPath)) StartJob(detectedMediaPath); };
-            Button dismissDetected = CreateButton("这次不需要", Color.White, TextColor, 660, 67, 140, 34);
-            dismissDetected.FlatAppearance.BorderColor = Color.FromArgb(214, 220, 229);
-            dismissDetected.FlatAppearance.BorderSize = 1;
-            dismissDetected.Click += delegate { promptSession.Dismiss(detectedMediaPath); SetDetectedCardVisible(false); SetAppStatus("继续监控", Color.FromArgb(8, 99, 164)); };
-            detectedCard.Controls.Add(detectedNameLabel);
-            detectedCard.Controls.Add(detectedPathLabel);
-            detectedCard.Controls.Add(acceptDetected);
-            detectedCard.Controls.Add(dismissDetected);
-
-            selectCard = NewCard(0, 0, 820, 154, Color.White);
-            selectCard.AccentColor = AccentColor;
-            selectCard.Controls.Add(CreateLabel("01  选择视频", 22, 16, 300, 28, 12F, FontStyle.Bold, TextColor));
-            selectCard.Controls.Add(CreateLabel("打开 PotPlayer 会自动询问，也可以在这里直接选择文件。", 22, 47, 620, 22, 9F, FontStyle.Regular, MutedColor));
-            selectedPathBox = new TextBox { Left = 22, Top = 77, Width = 536, Height = 30, ReadOnly = true, BackColor = Color.FromArgb(246, 251, 254), BorderStyle = BorderStyle.FixedSingle, ForeColor = TextColor };
-            Button chooseButton = CreateButton("选择文件", AccentSoft, AccentColor, 570, 74, 106, 34);
-            chooseButton.Click += ChooseVideoClicked;
-            startButton = CreateButton("生成双语字幕", MoyuPalette.Red, Color.White, 688, 74, 112, 34);
-            startButton.Click += delegate { StartJob(selectedPathBox.Text); };
-            selectedInfoLabel = CreateLabel("尚未选择视频", 20, 117, 790, 22, 8.5F, FontStyle.Regular, MutedColor);
-            selectCard.Controls.Add(selectedPathBox);
-            selectCard.Controls.Add(chooseButton);
-            selectCard.Controls.Add(startButton);
-            selectCard.Controls.Add(selectedInfoLabel);
-
-            progressCard = NewCard(0, 170, 820, 216, Color.White);
-            progressCard.AccentColor = MoyuPalette.Yellow;
-            progressCard.Controls.Add(CreateLabel("02  生成字幕", 22, 16, 180, 28, 12F, FontStyle.Bold, TextColor));
-            progressStageLabel = CreateLabel("等待任务", 20, 54, 590, 27, 11F, FontStyle.Bold, TextColor);
-            progressStageLabel.AutoEllipsis = true;
-            progressPercentLabel = CreateLabel("0%", 720, 53, 70, 28, 11F, FontStyle.Bold, AccentColor);
-            progressPercentLabel.TextAlign = ContentAlignment.MiddleRight;
-            progressDetailLabel = CreateLabel("选择视频，或保持本工具在托盘运行后用 PotPlayer 打开视频。", 20, 85, 770, 44, 9F, FontStyle.Regular, MutedColor);
-            progressDetailLabel.AutoEllipsis = true;
-            progressBar = new MoyuProgressBar { Left = 20, Top = 136, Width = 780, Height = 18, Minimum = 0, Maximum = 100, FillColor = AccentColor };
-            cancelButton = CreateButton("取消当前任务", Color.FromArgb(255, 238, 239), MoyuPalette.Red, 650, 169, 140, 32);
-            cancelButton.Enabled = false;
-            cancelButton.Click += CancelClicked;
-            progressCard.Controls.Add(progressStageLabel);
-            progressCard.Controls.Add(progressPercentLabel);
-            progressCard.Controls.Add(progressDetailLabel);
-            progressCard.Controls.Add(progressBar);
-            progressCard.Controls.Add(cancelButton);
-            progressCard.Controls.Add(CreateLabel("处理在播放器外进行，PotPlayer 可以继续正常播放。", 20, 174, 560, 24, 8.5F, FontStyle.Regular, SuccessColor));
-
-            taskCanvas.Controls.Add(detectedCard);
-            taskCanvas.Controls.Add(selectCard);
-            taskCanvas.Controls.Add(progressCard);
-            taskFooterLabel = CreateLabel("魔芋只负责安静地生成字幕；字幕发现与加载仍交给 PotPlayer。", 4, 404, 800, 28, 8.5F, FontStyle.Regular, MutedColor);
-            taskCanvas.Controls.Add(taskFooterLabel);
-            SetDetectedCardVisible(false);
-
-            CardPanel settingsCard = new CardPanel { Dock = DockStyle.Top, Height = 535, BackColor = Color.White, AccentColor = AccentColor };
-            settingsTab.Controls.Add(settingsCard);
-            settingsCard.Controls.Add(CreateLabel("模型、密钥与保存位置", 24, 20, 420, 32, 13F, FontStyle.Bold, TextColor));
-            settingsCard.Controls.Add(CreateLabel("API Key 只保存在 Windows 凭据管理器，不会写入 settings.json 或日志。", 24, 55, 700, 24, 9F, FontStyle.Regular, MutedColor));
-            AddFieldLabel(settingsCard, "API 请求地址", 24, 96);
-            apiUrlBox = CreateInput(24, 120, 772);
-            settingsCard.Controls.Add(apiUrlBox);
-            AddFieldLabel(settingsCard, "API Key", 24, 168);
-            apiKeyBox = CreateInput(24, 192, 666);
-            apiKeyBox.UseSystemPasswordChar = true;
-            settingsCard.Controls.Add(apiKeyBox);
-            Button showKeyButton = CreateButton("显示", AccentSoft, AccentColor, 702, 190, 94, 34);
-            showKeyButton.Click += delegate { apiKeyBox.UseSystemPasswordChar = !apiKeyBox.UseSystemPasswordChar; showKeyButton.Text = apiKeyBox.UseSystemPasswordChar ? "显示" : "隐藏"; };
-            settingsCard.Controls.Add(showKeyButton);
-            apiStoredLabel = CreateLabel("", 24, 230, 600, 22, 8.5F, FontStyle.Regular, MutedColor);
-            settingsCard.Controls.Add(apiStoredLabel);
-            AddFieldLabel(settingsCard, "模型名称", 24, 260);
-            modelBox = CreateInput(24, 284, 772);
-            settingsCard.Controls.Add(modelBox);
-
-            AddFieldLabel(settingsCard, "字幕库目录", 24, 328);
-            hubPathBox = CreateInput(24, 352, 666);
-            settingsCard.Controls.Add(hubPathBox);
-            Button chooseHubButton = CreateButton("选择目录", AccentSoft, AccentColor, 702, 350, 94, 34);
-            chooseHubButton.Click += ChooseHubClicked;
-            settingsCard.Controls.Add(chooseHubButton);
-
-            monitorCheck = new CheckBox { Left = 24, Top = 402, Width = 420, Height = 28, Text = "监控 PotPlayer 打开的视频并在工具内询问", ForeColor = TextColor };
-            startupCheck = new CheckBox { Left = 24, Top = 435, Width = 420, Height = 28, Text = "使用 PotPlayer 时自动启动魔芋（推荐）", ForeColor = TextColor };
-            settingsCard.Controls.Add(monitorCheck);
-            settingsCard.Controls.Add(startupCheck);
-            settingsStatusLabel = CreateLabel("", 24, 477, 560, 45, 9F, FontStyle.Regular, MutedColor);
-            settingsCard.Controls.Add(settingsStatusLabel);
-            testButton = CreateButton("测试连接", AccentSoft, AccentColor, 584, 473, 100, 36);
-            testButton.Click += TestConnectionClicked;
-            Button saveButton = CreateButton("保存设置", MoyuPalette.Red, Color.White, 696, 473, 100, 36);
-            saveButton.Click += SaveSettingsClicked;
-            settingsCard.Controls.Add(testButton);
-            settingsCard.Controls.Add(saveButton);
-
-            Controls.Add(tabs);
-            Controls.Add(header);
-
-            trayIcon = new NotifyIcon { Icon = Icon, Text = "魔芋 · AI 字幕", Visible = true };
-            trayIcon.DoubleClick += delegate { ShowFromTray(); };
-            ContextMenuStrip trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add("打开魔芋", null, delegate { ShowFromTray(); });
-            trayMenu.Items.Add("选择视频", null, delegate { ShowFromTray(); tabs.SelectedTab = taskTab; ChooseVideoClicked(null, EventArgs.Empty); });
-            trayMenu.Items.Add("模型设置", null, delegate { ShowFromTray(); tabs.SelectedTab = settingsTab; });
-            trayMenu.Items.Add(new ToolStripSeparator());
-            trayMenu.Items.Add("退出", null, delegate { allowClose = true; Close(); });
-            trayIcon.ContextMenuStrip = trayMenu;
-
-            LoadSettingsIntoUi();
-            Shown += FormShown;
-            FormClosing += OnFormClosing;
-        }
 
         private static CardPanel NewCard(int left, int top, int width, int height, Color color)
         {
@@ -226,7 +75,7 @@ namespace PotPlayerAiSubtitle
 
         private static Label CreateLabel(string text, int left, int top, int width, int height, float size, FontStyle style, Color color)
         {
-            return new Label { Text = text, Left = left, Top = top, Width = width, Height = height, Font = new Font("Microsoft YaHei UI", size, style), ForeColor = color };
+            return new Label { AutoEllipsis = true, UseMnemonic = false, Text = text, Left = left, Top = top, Width = width, Height = height, Font = new Font("Microsoft YaHei UI", size, style), ForeColor = color };
         }
 
 
@@ -237,11 +86,6 @@ namespace PotPlayerAiSubtitle
             return button;
         }
 
-        private static TextBox CreateInput(int left, int top, int width)
-        {
-            return new TextBox { Left = left, Top = top, Width = width, Height = 30, BorderStyle = BorderStyle.FixedSingle, BackColor = Color.FromArgb(246, 251, 254), ForeColor = TextColor };
-        }
-
         private static void AddFieldLabel(Control parent, string text, int left, int top)
         {
             parent.Controls.Add(CreateLabel(text, left, top, 300, 22, 9F, FontStyle.Bold, TextColor));
@@ -250,16 +94,18 @@ namespace PotPlayerAiSubtitle
         private void SetDetectedCardVisible(bool visible)
         {
             detectedCard.Visible = visible;
-            int offset = visible ? 138 : 0;
-            selectCard.Top = offset;
-            progressCard.Top = offset + 170;
-            taskFooterLabel.Top = offset + 404;
-            taskCanvas.AutoScrollMinSize = new Size(0, taskFooterLabel.Bottom + 8);
+            taskCanvas.PerformLayout();
         }
         private void FormShown(object sender, EventArgs e)
         {
             AppConfig config = AppConfig.Load();
-            StartupManager.SetEnabled(config.StartWithWindows);
+            try { StartupManager.SetEnabled(config.StartWithWindows); }
+            catch (Exception ex)
+            {
+                Logger.Write("Watcher setup failed: " + ex.Message);
+                settingsStatusLabel.Text = "后台检测器设置失败：" + ex.Message;
+                settingsStatusLabel.ForeColor = WarningColor;
+            }
             ApplyMonitorSetting(config.MonitorPotPlayer);
             StartWorkerLoop();
             StartWakeListener();
@@ -286,7 +132,12 @@ namespace PotPlayerAiSubtitle
             string fullPath = Path.GetFullPath(path);
             selectedPathBox.Text = fullPath;
             FileInfo info = new FileInfo(fullPath);
-            selectedInfoLabel.Text = Path.GetFileName(fullPath) + "  ·  " + FormatSize(info.Length);
+            selectedFileLabel.Text = Path.GetFileName(fullPath);
+            toolTips.SetToolTip(selectedFileLabel, fullPath);
+            selectedInfoLabel.Text = FormatSize(info.Length) + (processingVisible
+                ? (string.Equals(fullPath, processingMediaPath, StringComparison.OrdinalIgnoreCase) ? "  ·  正在后台处理" : "  ·  当前任务结束后可生成")
+                : "  ·  已就绪，可生成双语字幕");
+            startButton.Enabled = !processingVisible;
             selectedInfoLabel.ForeColor = TextColor;
         }
 
@@ -310,15 +161,17 @@ namespace PotPlayerAiSubtitle
                     settingsStatusLabel.Text = "请先填写并保存 API Key，再开始字幕任务。";
                     return;
                 }
+                string sourceLanguage = AppConfig.Load().SourceLanguage;
                 lock (jobLock)
                 {
-                    if (!string.IsNullOrEmpty(activeMediaPath) && string.Equals(activeMediaPath, Path.GetFullPath(mediaPath), StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrEmpty(activeMediaPath) && string.Equals(activeMediaPath, Path.GetFullPath(mediaPath), StringComparison.OrdinalIgnoreCase)
+                        && activeSourceLanguage == sourceLanguage)
                     {
                         UpdateProgress(new ProgressInfo("正在处理这个视频", "无需重复提交，请等待当前任务完成。", progressBar.Value));
                         return;
                     }
                 }
-                QueueManager.Notify(mediaPath);
+                QueueManager.Notify(mediaPath, sourceLanguage);
                 SelectMedia(mediaPath);
                 SetDetectedCardVisible(false);
                 tabs.SelectedTab = taskTab;
@@ -352,13 +205,15 @@ namespace PotPlayerAiSubtitle
                 string requestPath = queued.Value.Key;
                 JobRequest request = queued.Value.Value;
                 CancellationTokenSource source = new CancellationTokenSource();
-                lock (jobLock) { jobCancellation = source; activeMediaPath = request.MediaPath; }
+                lock (jobLock) { jobCancellation = source; activeMediaPath = request.MediaPath; activeSourceLanguage = request.SourceLanguage; }
                 SetProcessingState(request.MediaPath, true);
                 try
                 {
                     if (!File.Exists(request.MediaPath)) throw new FileNotFoundException("视频文件已不存在。", request.MediaPath);
                     IProgress<ProgressInfo> progress = new Progress<ProgressInfo>(UpdateProgress);
-                    SubtitlePipelineRunner runner = new SubtitlePipelineRunner(AppConfig.Load(), progress, EnsureApiKey);
+                    AppConfig jobConfig = AppConfig.Load();
+                    jobConfig.SourceLanguage = request.SourceLanguage;
+                    SubtitlePipelineRunner runner = new SubtitlePipelineRunner(jobConfig, progress, EnsureApiKey);
                     PipelineResult result = runner.Process(request.MediaPath, source.Token);
                     string completionDetail = "双语字幕已保存到视频旁，三种版本已归档到字幕库；字幕加载由 PotPlayer 负责。";
                     string warning = CombineWarnings(result.QualityWarning, result.PublishWarning);
@@ -408,28 +263,42 @@ namespace PotPlayerAiSubtitle
 
         private void SetProcessingState(string path, bool processing)
         {
+            if (IsDisposed || shuttingDown) return;
             if (InvokeRequired) { BeginInvoke(new Action<string, bool>(SetProcessingState), path, processing); return; }
             if (processing)
             {
+                processingMediaPath = path;
+                toolTips.SetToolTip(elapsedLabel, "当前任务：" + path);
+                processingStarted = DateTime.UtcNow;
+                processingVisible = true;
                 SelectMedia(path);
-                startButton.Enabled = false;
-                cancelButton.Enabled = true;
+                UpdateProgress(new ProgressInfo("准备视频", Path.GetFileName(path), 0));
                 SetAppStatus("正在处理", AccentColor);
+                UpdateElapsed();
             }
             else
             {
-                startButton.Enabled = true;
-                cancelButton.Enabled = false;
+                UpdateElapsed();
+                processingVisible = false;
+                if (File.Exists(selectedPathBox.Text)) SelectMedia(selectedPathBox.Text);
+                if (tabs.SelectedTab == libraryTab) RefreshLibrary();
             }
+            stageStrip.Running = processing; stageStrip.Invalidate();
+            startButton.Enabled = !processing && File.Exists(selectedPathBox.Text);
+            cancelButton.Enabled = processing;
         }
 
         private void UpdateProgress(ProgressInfo info)
         {
+            if (IsDisposed || shuttingDown) return;
             if (InvokeRequired) { BeginInvoke(new Action<ProgressInfo>(UpdateProgress), info); return; }
             int percent = Math.Max(0, Math.Min(100, info.Percent));
             progressStageLabel.Text = info.Stage;
             progressDetailLabel.Text = info.Detail;
             progressBar.Value = percent;
+            progressBar.FillColor = percent == 100 ? SuccessColor : AccentColor;
+            stageStrip.Percent = percent; stageStrip.Invalidate();
+            toolTips.SetToolTip(progressDetailLabel, info.Detail);
             progressPercentLabel.Text = percent + "%";
             trayIcon.Text = Truncate(info.Stage, 63);
         }
@@ -465,7 +334,6 @@ namespace PotPlayerAiSubtitle
             detectedNameLabel.Text = Path.GetFileName(detectedMediaPath);
             detectedPathLabel.Text = detectedMediaPath;
             SetDetectedCardVisible(true);
-            detectedCard.BringToFront();
             tabs.SelectedTab = taskTab;
             SetAppStatus("发现新视频", WarningColor);
             ShowAndActivate();
@@ -489,8 +357,10 @@ namespace PotPlayerAiSubtitle
         private void LoadSettingsIntoUi()
         {
             AppConfig config = AppConfig.Load();
+            UpdateConfigurationSummary(config);
             apiUrlBox.Text = config.ApiBaseUrl;
             modelBox.Text = config.Model;
+            sourceLanguageBox.SourceLanguage = config.SourceLanguage;
             hubPathBox.Text = config.SubtitleHubPath;
             monitorCheck.Checked = config.MonitorPotPlayer;
             startupCheck.Checked = config.StartWithWindows;
@@ -504,6 +374,7 @@ namespace PotPlayerAiSubtitle
             AppConfig config = AppConfig.Load();
             config.ApiBaseUrl = apiUrlBox.Text.Trim();
             config.Model = modelBox.Text.Trim();
+            config.SourceLanguage = sourceLanguageBox.SourceLanguage;
             if (string.IsNullOrWhiteSpace(hubPathBox.Text)) throw new InvalidOperationException("字幕库目录不能为空。");
             config.SubtitleHubPath = Path.GetFullPath(hubPathBox.Text.Trim());
             Directory.CreateDirectory(config.SubtitleHubPath);
@@ -539,7 +410,8 @@ namespace PotPlayerAiSubtitle
                 apiStoredLabel.Text = stored ? "已安全保存 API Key；不修改时可留空。" : "尚未保存 API Key。";
                 apiStoredLabel.ForeColor = stored ? SuccessColor : WarningColor;
                 settingsStatusLabel.ForeColor = SuccessColor;
-                settingsStatusLabel.Text = "设置已保存。";
+                settingsStatusLabel.Text = "设置已保存，对新提交的任务生效。";
+                UpdateConfigurationSummary(config);
             }
             catch (Exception ex)
             {
@@ -616,7 +488,7 @@ namespace PotPlayerAiSubtitle
         private void ShowAndActivate()
         {
             Show();
-            WindowState = FormWindowState.Normal;
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             TopMost = true;
             Activate();
             System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 600 };
@@ -626,9 +498,11 @@ namespace PotPlayerAiSubtitle
 
         private void SetAppStatus(string text, Color color)
         {
+            if (IsDisposed || shuttingDown) return;
             if (InvokeRequired) { BeginInvoke(new Action<string, Color>(SetAppStatus), text, color); return; }
-            appStatusLabel.Text = text;
-            appStatusLabel.BackColor = color;
+            appStatusLabel.Text = "●  " + text;
+            appStatusLabel.ForeColor = color;
+            appStatusLabel.BackColor = MoyuDrawing.Blend(Color.White, color, 0.10f);
             appStatusLabel.Invalidate();
         }
 
@@ -665,7 +539,6 @@ namespace PotPlayerAiSubtitle
             if (source != null) source.Cancel();
             jobSignal.Set();
             trayIcon.Visible = false;
-            trayIcon.Dispose();
         }
     }
 
@@ -689,29 +562,6 @@ namespace PotPlayerAiSubtitle
         public void Reset() { currentPath = ""; dismissedPath = ""; }
     }
 
-    internal static class StartupManager
-    {
-        private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        private const string ValueName = "魔芋";
-        private const string LegacyValueName = "PotPlayer AI Subtitle";
-
-        internal static string BuildCommand(string executablePath)
-        {
-            return "\"" + executablePath + "\" --wait-for-potplayer";
-        }
-
-        public static void SetEnabled(bool enabled)
-        {
-            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunKeyPath, true))
-            {
-                if (key == null) return;
-                key.DeleteValue(LegacyValueName, false);
-                if (enabled) key.SetValue(ValueName, BuildCommand(Application.ExecutablePath), RegistryValueKind.String);
-                else key.DeleteValue(ValueName, false);
-            }
-        }
-    }
-
     internal sealed class CardPanel : Panel
     {
         public Color BorderColor { get; set; }
@@ -720,9 +570,9 @@ namespace PotPlayerAiSubtitle
 
         public CardPanel()
         {
-            BorderColor = Color.FromArgb(205, 228, 240);
+            BorderColor = MoyuPalette.Border;
             AccentColor = Color.Transparent;
-            CornerRadius = 18;
+            CornerRadius = 12;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
         }
 
@@ -749,6 +599,26 @@ namespace PotPlayerAiSubtitle
                 using (SolidBrush brush = new SolidBrush(AccentColor)) e.Graphics.FillPath(brush, path);
             }
             base.OnPaint(e);
+        }
+    }
+
+    internal sealed class SourceLanguageComboBox : ComboBox
+    {
+        public SourceLanguageComboBox()
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList;
+            foreach (SourceLanguageOption option in SourceLanguages.Options) Items.Add(option);
+            SourceLanguage = "ja";
+        }
+
+        public string SourceLanguage
+        {
+            get
+            {
+                SourceLanguageOption option = SelectedItem as SourceLanguageOption;
+                return option == null ? "ja" : option.Code;
+            }
+            set { SelectedItem = SourceLanguages.Get(value); }
         }
     }
 
@@ -788,12 +658,37 @@ namespace PotPlayerAiSubtitle
                 if (serialized.IndexOf("ApiKey", StringComparison.OrdinalIgnoreCase) >= 0) throw new Exception("API Key 不应进入普通配置。");
                 results.Add("PASS API key is absent from JSON settings");
 
-                if (!PotPlayerStartupWatcher.IsPotPlayerProcessName("PotPlayerMini64")
-                    || !PotPlayerStartupWatcher.IsPotPlayerProcessName("potplayer")
-                    || PotPlayerStartupWatcher.IsPotPlayerProcessName("AI-Subtitle-Worker"))
+                using (SourceLanguageComboBox languageBox = new SourceLanguageComboBox())
+                {
+                    if (languageBox.SourceLanguage != "ja") throw new Exception("源语言控件未默认日语。");
+                    foreach (SourceLanguageOption language in SourceLanguages.Options)
+                    {
+                        languageBox.SourceLanguage = language.Code;
+                        if (languageBox.SourceLanguage != language.Code) throw new Exception("源语言选择未生效。");
+                    }
+                    languageBox.SelectedIndex = -1;
+                    if (languageBox.SourceLanguage != "ja") throw new Exception("未选择语言时未回退日语。");
+                }
+                results.Add("PASS language selector supports every option and defaults to Japanese when unselected");
+
+                string languageMedia = Path.Combine(tempRoot, "language-queued.mkv");
+                File.WriteAllBytes(languageMedia, new byte[] { 6, 7, 8 });
+                QueueManager.Notify(languageMedia, "en");
+                QueueManager.Notify(languageMedia, "ko");
+                List<JobRequest> languageRequests = Directory.GetFiles(StoragePaths.Queue, "request-*.json")
+                    .Select(delegate(string path) { return AtomicJson.Read<JobRequest>(path, null); })
+                    .Where(delegate(JobRequest request) { return request != null && request.MediaPath == languageMedia; }).ToList();
+                if (languageRequests.Count != 2 || !languageRequests.Any(delegate(JobRequest request) { return request.SourceLanguage == "en"; })
+                    || !languageRequests.Any(delegate(JobRequest request) { return request.SourceLanguage == "ko"; }))
+                    throw new Exception("同一视频不同源语言的队列任务互相覆盖。");
+                results.Add("PASS queued jobs retain their own source language without overwriting each other");
+
+                if (!WatcherContract.IsPlayerName("PotPlayerMini64")
+                    || !WatcherContract.IsPlayerName("potplayer")
+                    || WatcherContract.IsPlayerName("AI-Subtitle-Worker"))
                     throw new Exception("PotPlayer 自动启动触发器的进程识别不正确。");
                 string startupCommand = StartupManager.BuildCommand(@"C:\Program Files\AI Subtitle\AI-Subtitle-Worker.exe");
-                if (!startupCommand.EndsWith(" --wait-for-potplayer", StringComparison.Ordinal)
+                if (!startupCommand.EndsWith("Moyu-Watcher.exe\"", StringComparison.Ordinal)
                     || !startupCommand.StartsWith("\"", StringComparison.Ordinal))
                     throw new Exception("PotPlayer 自动启动命令不正确。");
                 results.Add("PASS PotPlayer-triggered startup command and process detection");

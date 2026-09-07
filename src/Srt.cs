@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -127,33 +128,29 @@ namespace PotPlayerAiSubtitle
             return letters > 0 && japanese >= 5 && japanese * 4 >= letters;
         }
 
-        public static string FindJapaneseSrtBesideMedia(string mediaPath)
+        public static string FindSourceSrtBesideMedia(string mediaPath, string sourceLanguage, string videoCacheDirectory)
         {
             string directory = Path.GetDirectoryName(mediaPath);
             string name = Path.GetFileNameWithoutExtension(mediaPath);
-            string[] preferred =
+            SourceLanguageOption language = SourceLanguages.Get(sourceLanguage);
+            foreach (string tag in new[] { language.Code }.Concat(language.SubtitleTags).Distinct())
             {
-                Path.Combine(directory, name + ".ja.srt"),
-                Path.Combine(directory, name + ".jpn.srt"),
-                Path.Combine(directory, name + ".jp.srt")
-            };
-            foreach (string path in preferred) if (File.Exists(path)) return path;
-
-            string[] candidates = Directory.GetFiles(directory, name + "*.srt");
-            foreach (string path in candidates)
-            {
-                string lower = Path.GetFileName(path).ToLowerInvariant();
-                if (lower.EndsWith(".zh-cn.srt", StringComparison.Ordinal)
-                    || lower.EndsWith(".ja-zh-cn.srt", StringComparison.Ordinal)
-                    || lower.EndsWith(".candidate.srt", StringComparison.Ordinal)) continue;
-                try
-                {
-                    string sample = File.ReadAllText(path, Encoding.UTF8);
-                    if (sample.Length > 16000) sample = sample.Substring(0, 16000);
-                    if (LooksJapanese(sample)) return path;
-                }
-                catch { }
+                string path = Path.Combine(directory, name + "." + tag + ".srt");
+                if (File.Exists(path)) return path;
             }
+
+            // Untagged Latin-script subtitles cannot reliably be distinguished by language.
+            // Preserve the Japanese fallback, but never feed our own bilingual output back in.
+            if (language.Code != "ja") return null;
+            string candidate = Path.Combine(directory, name + ".srt");
+            if (!File.Exists(candidate) || SubtitlePublisher.IsGeneratedBilingual(candidate, videoCacheDirectory)) return null;
+            try
+            {
+                string sample = File.ReadAllText(candidate, Encoding.UTF8);
+                if (sample.Length > 16000) sample = sample.Substring(0, 16000);
+                if (LooksJapanese(sample)) return candidate;
+            }
+            catch { }
             return null;
         }
 

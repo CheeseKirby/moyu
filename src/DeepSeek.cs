@@ -94,19 +94,20 @@ namespace PotPlayerAiSubtitle
             }
         }
 
-        private static string BuildSystemPrompt()
+        internal string BuildSystemPrompt()
         {
-            return "你是日语影视字幕翻译器。把目标字幕翻译为自然、简洁、符合场景的简体中文。" +
+            return "你是" + SourceLanguages.Get(config.SourceLanguage).Name + "影视字幕翻译器。把目标字幕翻译为自然、简洁、符合场景的简体中文。" +
                    "必须保持每个目标字幕的 id，一条不漏，不合并，不添加时间轴。" +
                    "上下文仅用于理解，不能把上下文作为目标重复输出。" +
                    "人名、称呼、语气和术语在同一作品中保持一致。重复的拟声词或语气音只保留两到三次，每条译文不超过八十个汉字。" +
-                   "只返回 JSON 对象，格式为 {\"translations\":[{\"id\":1,\"zh\":\"译文\"}],\"glossary_updates\":{\"日文术语\":\"中文译法\"}}。";
+                   "只返回 JSON 对象，格式为 {\"translations\":[{\"id\":1,\"zh\":\"译文\"}],\"glossary_updates\":{\"源语言术语\":\"中文译法\"}}。";
         }
 
-        private static string BuildUserPrompt(IList<SubtitleCue> cues, SubtitleScene scene, int contextCount, IDictionary<string, string> glossary)
+        internal string BuildUserPrompt(IList<SubtitleCue> cues, SubtitleScene scene, int contextCount, IDictionary<string, string> glossary)
         {
             Dictionary<string, object> request = new Dictionary<string, object>();
-            request["task"] = "translate_target_cues_from_Japanese_to_Simplified_Chinese";
+            request["task"] = "translate_target_cues_to_Simplified_Chinese";
+            request["source_language"] = config.SourceLanguage;
             request["glossary"] = glossary;
             request["context_before"] = CueObjects(cues, Math.Max(0, scene.StartCueIndex - contextCount), scene.StartCueIndex - 1);
             request["target_cues"] = CueObjects(cues, scene.StartCueIndex, scene.EndCueIndex);

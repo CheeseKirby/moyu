@@ -1,6 +1,7 @@
 # Build output
 AI-Subtitle-Worker.exe
 AI-Subtitle-Worker.pdb
+Moyu-Watcher.exe
 *.rollback.exe
 *.rollback.pdb
 

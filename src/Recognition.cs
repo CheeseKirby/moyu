@@ -22,7 +22,7 @@ namespace PotPlayerAiSubtitle
         public SubtitleQualityReport QualityReport { get; set; }
     }
 
-    internal sealed class JapaneseSubtitleRecognizer
+    internal sealed class SourceSubtitleRecognizer
     {
         private const double SegmentSeconds = 300;
         private const double SegmentOverlapSeconds = 1.25;
@@ -32,7 +32,7 @@ namespace PotPlayerAiSubtitle
         private readonly AppConfig config;
         private readonly Action<string, string, int> progress;
 
-        public JapaneseSubtitleRecognizer(AppConfig config, Action<string, string, int> progress)
+        public SourceSubtitleRecognizer(AppConfig config, Action<string, string, int> progress)
         {
             this.config = config;
             this.progress = progress;
@@ -41,31 +41,35 @@ namespace PotPlayerAiSubtitle
         public RecognitionCandidateResult Prepare(string mediaPath, string cacheDir, string rawPath, string candidatePath,
             string reportPath, CancellationToken cancellation)
         {
-            string external = SrtFile.FindJapaneseSrtBesideMedia(mediaPath);
+            string external = SrtFile.FindSourceSrtBesideMedia(mediaPath, config.SourceLanguage,
+                config.SourceLanguage == "ja" ? cacheDir : Directory.GetParent(cacheDir).FullName);
             if (!string.IsNullOrEmpty(external))
             {
-                Report("已找到日语字幕", Path.GetFileName(external), 25);
+                Report("已找到源语言字幕", Path.GetFileName(external), 25);
                 InvalidateSegmentedRawCache(rawPath);
                 File.Copy(external, rawPath, true);
-                return WriteTrustedCandidate(SrtFile.Read(rawPath), "external-japanese-srt", candidatePath, reportPath);
+                return WriteTrustedCandidate(SrtFile.Read(rawPath), "external-" + config.SourceLanguage + "-srt", candidatePath, reportPath);
             }
 
             string ffmpeg = ToolProcess.ResolveExecutable(config.FfmpegPath, "ffmpeg.exe");
             if (!string.IsNullOrEmpty(ffmpeg))
             {
-                Report("正在检查内嵌字幕", "尝试提取视频中的日语字幕轨道。", 10);
-                string embedded = Path.Combine(cacheDir, "embedded-ja.srt");
-                string args = "-nostdin -hide_banner -loglevel error -y -i " + ToolProcess.Quote(mediaPath)
-                    + " -map 0:s:m:language:jpn -c:s srt " + ToolProcess.Quote(embedded);
-                int code = ToolProcess.Run(ffmpeg, args, cacheDir, cancellation, true);
-                if (code == 0 && File.Exists(embedded) && new FileInfo(embedded).Length > 20)
+                Report("正在检查内嵌字幕", "尝试提取视频中的源语言字幕轨道。", 10);
+                string embedded = Path.Combine(cacheDir, "embedded-" + config.SourceLanguage + ".srt");
+                foreach (string tag in SourceLanguages.Get(config.SourceLanguage).SubtitleTags)
                 {
-                    List<SubtitleCue> cues = SrtFile.Read(embedded);
-                    if (cues.Count > 0)
+                    string args = "-nostdin -hide_banner -loglevel error -y -i " + ToolProcess.Quote(mediaPath)
+                        + " -map 0:s:m:language:" + tag + " -c:s srt " + ToolProcess.Quote(embedded);
+                    int code = ToolProcess.Run(ffmpeg, args, cacheDir, cancellation, true);
+                    if (code == 0 && File.Exists(embedded) && new FileInfo(embedded).Length > 20)
                     {
-                        InvalidateSegmentedRawCache(rawPath);
-                        File.Copy(embedded, rawPath, true);
-                        return WriteTrustedCandidate(cues, "embedded-japanese-subtitle", candidatePath, reportPath);
+                        List<SubtitleCue> cues = SrtFile.Read(embedded);
+                        if (cues.Count > 0)
+                        {
+                            InvalidateSegmentedRawCache(rawPath);
+                            File.Copy(embedded, rawPath, true);
+                            return WriteTrustedCandidate(cues, "embedded-" + config.SourceLanguage + "-subtitle", candidatePath, reportPath);
+                        }
                     }
                 }
             }
@@ -97,7 +101,7 @@ namespace PotPlayerAiSubtitle
                 }
                 else
                 {
-                    Report("正在分段识别日语字幕", "按原始时间轴分段处理，避免错误上下文扩散。", 24);
+                    Report("正在分段识别源语言字幕", "按原始时间轴分段处理，避免错误上下文扩散。", 24);
                     InvalidateSegmentedRawCache(rawPath);
                     initial = RecognizeSegmented(audio, duration, temporary, cancellation);
                     if (initial.Count == 0) throw new InvalidDataException("Whisper 没有识别到有效对白。");
@@ -142,7 +146,7 @@ namespace PotPlayerAiSubtitle
 
                 SrtFile.Write(candidatePath, candidateCues, null, false);
                 AtomicJson.Write(reportPath, finalReport);
-                Report(finalReport.Passed ? "日语字幕质量检查通过" : "日语字幕需要检查",
+                Report(finalReport.Passed ? "源语言字幕质量检查通过" : "源语言字幕需要检查",
                     string.Format(CultureInfo.InvariantCulture, "候选字幕 {0} 条，可疑 {1} 条，最长 {2:0.0} 秒。",
                     finalReport.CueCount, finalReport.SuspiciousCueCount, finalReport.LongestSeconds), 44);
 
@@ -223,6 +227,7 @@ namespace PotPlayerAiSubtitle
                 SegmentedRecognitionVersion,
                 SegmentSeconds.ToString("0.###", CultureInfo.InvariantCulture),
                 SegmentOverlapSeconds.ToString("0.###", CultureInfo.InvariantCulture),
+                config.SourceLanguage,
                 DescribeCacheInput(rawPath),
                 DescribeCacheInput(audioPath),
                 DescribeCacheInput(config.WhisperPath),
@@ -275,7 +280,7 @@ namespace PotPlayerAiSubtitle
                 string clip = Path.Combine(temporary, "segment-" + i.ToString("000", CultureInfo.InvariantCulture) + ".wav");
                 ExtractClip(audio, clip, extractionStart, extractionEnd - extractionStart, cancellation);
                 int percent = 24 + (int)(14.0 * (i + 1) / segmentCount);
-                Report("正在分段识别日语字幕", string.Format(CultureInfo.InvariantCulture,
+                Report("正在分段识别源语言字幕", string.Format(CultureInfo.InvariantCulture,
                     "片段 {0}/{1}，{2}-{3}", i + 1, segmentCount,
                     FormatClock(TimeSpan.FromSeconds(coreStart)), FormatClock(TimeSpan.FromSeconds(coreEnd))), percent);
                 List<SubtitleCue> local = RunWhisper(clip, Path.Combine(temporary, "segment-" + i.ToString("000", CultureInfo.InvariantCulture)), false, cancellation);
@@ -351,17 +356,23 @@ namespace PotPlayerAiSubtitle
                 throw new InvalidOperationException("识别音频分段失败。请查看 Logs\\worker.log。");
         }
 
-        private List<SubtitleCue> RunWhisper(string clip, string outputBase, bool retry, CancellationToken cancellation)
+        internal string BuildWhisperArguments(string clip, string outputBase, bool retry)
         {
             string playerRoot = Directory.GetParent(StoragePaths.Root).FullName;
             int threads = Math.Max(1, Math.Min(8, Environment.ProcessorCount));
             string args = "-m " + ToolProcess.Quote(ToolProcess.RelativePathUnder(config.WhisperModelPath, playerRoot))
                 + " -f " + ToolProcess.Quote(ToolProcess.RelativePathUnder(clip, playerRoot))
-                + " -l ja -osrt -t " + threads.ToString(CultureInfo.InvariantCulture)
+                + " -l " + config.SourceLanguage + " -osrt -t " + threads.ToString(CultureInfo.InvariantCulture)
                 + " -p 1 --vad -vm " + ToolProcess.Quote(ToolProcess.RelativePathUnder(config.WhisperVadModelPath, playerRoot))
                 + (retry ? " -vt 0.45 -vspd 180 -vsd 400 -vmsd 20 -vp 120 -vo 0.08" : " -vt 0.35 -vspd 180 -vsd 300 -vmsd 25 -vp 150 -vo 0.10")
                 + " -mc 0 -ml 42 -nf -sns -of " + ToolProcess.Quote(ToolProcess.RelativePathUnder(outputBase, playerRoot));
-            int code = ToolProcess.Run(config.WhisperPath, args, playerRoot, cancellation, false);
+            return args;
+        }
+
+        private List<SubtitleCue> RunWhisper(string clip, string outputBase, bool retry, CancellationToken cancellation)
+        {
+            string playerRoot = Directory.GetParent(StoragePaths.Root).FullName;
+            int code = ToolProcess.Run(config.WhisperPath, BuildWhisperArguments(clip, outputBase, retry), playerRoot, cancellation, false);
             string output = outputBase + ".srt";
             if (code != 0) throw new InvalidOperationException("Whisper 分段识别失败。请查看 Logs\\worker.log。");
             if (!File.Exists(output) || new FileInfo(output).Length <= 10) return new List<SubtitleCue>();
