@@ -17,16 +17,16 @@ namespace PotPlayerAiSubtitle
 
         private void BuildLibraryPage()
         {
-            Panel canvas = new Panel { Dock = DockStyle.Fill, Padding = new Padding(28, 24, 28 + SystemInformation.VerticalScrollBarWidth + 2, 24), BackColor = PageColor };
-            Panel heading = PageHeading("字幕库", "你的对白收藏。双语、源语言与中文版本，集中归档。");
+            Panel canvas = new MoyuSurfacePanel { Dock = DockStyle.Fill, Padding = new Padding(28, 24, 28 + SystemInformation.VerticalScrollBarWidth + 2, 24), BackColor = PageColor };
+            Panel heading = PageHeading("好故事，值得再看一次。", "字幕库  /  双语、源语言与中文版本，集中归档。");
             heading.Dock = DockStyle.Top; heading.Height = 90;
-            Panel actions = new Panel { Dock = DockStyle.Top, Height = 64, Width = 860 };
+            Panel actions = new MoyuSurfacePanel { Dock = DockStyle.Top, Height = 64, Width = 860 };
             Button refresh = CreateButton("刷新列表", AccentSoft, AccentColor, 0, 0, 116, 38);
             refresh.Click += delegate { RefreshLibrary(); };
             Button openRoot = CreateButton("打开字幕库目录", Color.White, AccentColor, 128, 0, 164, 38);
             openRoot.Click += delegate { OpenLibraryFolder(AppConfig.Load().SubtitleHubPath); };
             actions.Controls.AddRange(new Control[] { refresh, openRoot });
-            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 105, Width = 860 };
+            Panel bottom = new MoyuSurfacePanel { Dock = DockStyle.Bottom, Height = 105, Width = 860 };
             libraryStatusLabel = CreateLabel("", 0, 15, 620, 27, 9F, FontStyle.Regular, MutedColor); Stretch(libraryStatusLabel);
             libraryPathLabel = CreateLabel("", 0, 52, 620, 44, 8F, FontStyle.Regular, MutedColor); Stretch(libraryPathLabel);
             openArchiveButton = CreateButton("打开所选归档", AccentColor, Color.White, 690, 15, 170, 42); AnchorRight(openArchiveButton);

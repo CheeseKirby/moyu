@@ -1,0 +1,37 @@
+{
+  "checks": [
+    {
+      "name": "宽屏应用宽度1344px",
+      "pass": true
+    },
+    {
+      "name": "小魔芋无填色",
+      "pass": true
+    },
+    {
+      "name": "两条短线",
+      "pass": true
+    },
+    {
+      "name": "settings页面切换",
+      "pass": true
+    },
+    {
+      "name": "library页面切换",
+      "pass": true
+    },
+    {
+      "name": "窄窗口不横向溢出",
+      "pass": true
+    },
+    {
+      "name": "小插画未溢出",
+      "pass": true
+    },
+    {
+      "name": "无脚本错误",
+      "pass": true
+    }
+  ],
+  "errors": []
+}

@@ -15,14 +15,147 @@ internal static class WorkspaceUiTests
     private static object Field(MainForm form, string name) { return typeof(MainForm).GetField(name, Flags).GetValue(form); }
     private static object Call(MainForm form, string name, params object[] args) { return typeof(MainForm).GetMethod(name, Flags).Invoke(form, args); }
     private static void Check(bool ok, string message) { if (!ok) throw new Exception(message); }
+    private static void Pump(int milliseconds)
+    {
+        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        do { Application.DoEvents(); System.Threading.Thread.Sleep(5); } while (watch.ElapsedMilliseconds < milliseconds);
+    }
+    private sealed class ProbeButton : MoyuButton
+    {
+        internal float HoverValue { get { return HoverAmount; } }
+        internal float PressValue { get { return PressAmount; } }
+        internal bool Animating { get { return Motion.IsRunning; } }
+        internal void HoverEnter() { OnMouseEnter(EventArgs.Empty); }
+        internal void HoverLeave() { OnMouseLeave(EventArgs.Empty); }
+        internal void Down(MouseButtons button) { OnMouseDown(new MouseEventArgs(button, 1, 12, 12, 0)); }
+        internal void Up() { OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, 12, 12, 0)); }
+        internal void Key(bool down) { if (down) OnKeyDown(new KeyEventArgs(Keys.Space)); else OnKeyUp(new KeyEventArgs(Keys.Space)); }
+    }
+    private static void CheckEffects()
+    {
+        using (Form host = new Form { ShowInTaskbar = false, StartPosition = FormStartPosition.Manual, Location = new Point(-32000, -32000), ClientSize = new Size(640, 200) })
+        using (ProbeButton button = new ProbeButton { Text = "生成双语字幕  →", BackColor = MoyuPalette.Yellow, ForeColor = MoyuPalette.Ink, Bounds = new Rectangle(24, 40, 230, 48) })
+        using (MoyuNavButton nav = new MoyuNavButton { Text = "字幕任务", GlyphKind = "task", Bounds = new Rectangle(300, 40, 190, 48) })
+        using (MoyuProgressBar bar = new MoyuProgressBar { Bounds = new Rectangle(24, 122, 550, 16) })
+        {
+            host.Controls.AddRange(new Control[] { button, nav, bar }); host.Show(); Pump(20);
+            using (MoyuMotion motion = new MoyuMotion(button, delegate { return true; }))
+            {
+                motion.To(0, 1, 160); Check(motion.IsRunning && motion[0] < 1, "Motion did not start asynchronously");
+                Pump(45); Check(motion[0] > 0 && motion[0] < 1, "Motion has no intermediate frames");
+                motion.To(0, 0, 90); motion.To(1, 1, 70); Pump(180);
+                Check(motion[0] == 0 && motion[1] == 1 && !motion.IsRunning, "Retargeted channels failed to settle");
+                motion.To(0, 1, 160); host.Hide(); Pump(45); Check(motion[0] == 1 && !motion.IsRunning, "Hidden parent kept animation running: visible=" + button.Visible + ", value=" + motion[0] + ", timer=" + motion.IsRunning);
+                host.Show(); motion.To(0, 0, 160); button.Enabled = false;
+                Check(motion[0] == 0 && !motion.IsRunning, "Disabled control kept animation running"); button.Enabled = true;
+            }
+            bool allow = false;
+            using (MoyuMotion reduced = new MoyuMotion(button, delegate { return allow; }))
+            {
+                reduced.To(0, 1, 160); Check(reduced[0] == 1 && !reduced.IsRunning, "Reduced motion must be immediate");
+                allow = true; reduced.To(0, 0, 160); allow = false; Pump(45);
+                Check(reduced[0] == 0 && !reduced.IsRunning, "Preference change did not stop animation");
+            }
+            using (Control disposable = new Control())
+            {
+                host.Controls.Add(disposable);
+                MoyuMotion lifetime = new MoyuMotion(disposable, delegate { return true; });
+                lifetime.To(0, 1, 160); disposable.Dispose();
+                Check(!lifetime.IsRunning, "Disposed owner kept its animation timer"); lifetime.Dispose(); lifetime.Dispose();
+            }
+            Console.WriteLine("PASS finite easing, rapid retargeting, reduced motion, hidden/disabled/disposed cleanup");
+            button.HoverEnter(); Pump(190); Check(button.HoverValue == 1 && !button.Animating, "Hover failed to settle");
+            button.Down(MouseButtons.Right); Pump(100); Check(button.PressValue == 0, "Right click depressed the primary action");
+            button.Down(MouseButtons.Left); Pump(100); Check(button.PressValue == 1, "Mouse press feedback missing");
+            button.Up(); button.HoverLeave(); Pump(190); Check(button.HoverValue == 0 && button.PressValue == 0 && !button.Animating, "Mouse release remained pressed");
+            int clicks = 0; button.Click += delegate { clicks++; };
+            button.Key(true); Pump(100); Check(button.PressValue == 1, "Keyboard press feedback missing");
+            button.Key(false); Check(clicks == 1, "Keyboard activation was delayed or duplicated"); Pump(190);
+            Check(button.PressValue == 0 && !button.Animating, "Keyboard release remained pressed");
+            button.HoverEnter(); button.Enabled = false; Check(!button.Animating && button.HoverValue == 0, "Disabled hover remained active"); button.Enabled = true;
+            nav.Selected = true; Check(nav.Selected, "Navigation state was delayed"); Pump(230);
+            nav.Selected = false; nav.Selected = true; Pump(230);
+            Console.WriteLine("PASS mouse/keyboard feedback, immediate activation and navigation transitions");
+            bar.Value = 65; Check(bar.Value == 65 && bar.DisplayedValue <= 65, "Animation changed real progress");
+            Pump(290); Check(bar.DisplayedValue == 65 && !bar.IsAnimating, "Progress did not settle");
+            bar.Value = 90; bar.Value = 12; Check(bar.Value == 12 && bar.DisplayedValue == 12 && !bar.IsAnimating, "Progress rollback was animated");
+            bar.Value = 100; Check(bar.DisplayedValue == 100 && !bar.IsAnimating, "Completion lagged actual state");
+            bar.Value = 0; bar.Value = 75; host.Hide(); Pump(45); Check(bar.DisplayedValue == 75 && !bar.IsAnimating, "Hidden progress continued animating"); host.Show();
+            Console.WriteLine("PASS truthful progress, immediate reset/completion and hidden progress cleanup");
+            using (MoyuSurfacePanel surface = new MoyuSurfacePanel { BackColor = MoyuPalette.Page, Size = new Size(192, 192) })
+            using (MoyuSurfacePanel child = new MoyuSurfacePanel { BackColor = MoyuPalette.Page, Bounds = new Rectangle(31, 29, 100, 100) })
+            using (Bitmap first = new Bitmap(192, 192))
+            using (Bitmap second = new Bitmap(192, 192))
+            {
+                host.Controls.Add(surface); surface.DrawToBitmap(first, surface.ClientRectangle); surface.DrawToBitmap(second, surface.ClientRectangle);
+                int changed = 0;
+                for (int y = 0; y < 192; y++) for (int x = 0; x < 192; x++)
+                {
+                    Color color = first.GetPixel(x, y);
+                    Check(color == second.GetPixel(x, y), "Texture changes between repaints");
+                    if (color.ToArgb() != MoyuPalette.Page.ToArgb()) changed++;
+                    Check(Math.Abs(color.R - MoyuPalette.Page.R) <= 16 && Math.Abs(color.G - MoyuPalette.Page.G) <= 20 && Math.Abs(color.B - MoyuPalette.Page.B) <= 24, "Paper texture competes with content");
+                }
+                if (MoyuEffects.TextureEnabled) Check(changed > 1000 && changed < 6000, "Paper texture density wrong");
+                surface.Controls.Add(child); surface.DrawToBitmap(second, surface.ClientRectangle);
+                for (int y = 30; y < 127; y++) for (int x = 32; x < 129; x++)
+                    Check(first.GetPixel(x, y) == second.GetPixel(x, y), "Child texture seam / duplicate grain");
+            }
+            using (Control edge = new Control { Size = new Size(40, 30) })
+            using (Bitmap bitmap = new Bitmap(40, 30))
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.Clear(Color.Black);
+                graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                MoyuSurface.Background(graphics, edge, Color.White);
+                Check(graphics.SmoothingMode == System.Drawing.Drawing2D.SmoothingMode.AntiAlias, "Background changed foreground smoothing");
+                for (int x = 0; x < 40; x++) Check(bitmap.GetPixel(x, 0).ToArgb() == Color.White.ToArgb(), "Antialiased top edge leaks buffer pixels");
+                for (int y = 0; y < 30; y++) Check(bitmap.GetPixel(0, y).ToArgb() == Color.White.ToArgb(), "Antialiased left edge leaks buffer pixels");
+            }
+            Console.WriteLine("PASS deterministic low-contrast texture, seamless child surfaces and opaque buffer edges");
+        }
+    }
     private static void Capture(MainForm form, string name)
     {
-        form.PerformLayout(); Application.DoEvents();
+        form.PerformLayout(); Pump(260);
         using (Bitmap image = new Bitmap(form.Width, form.Height))
         {
             form.DrawToBitmap(image, new Rectangle(Point.Empty, image.Size));
             image.Save(Path.Combine(StoragePaths.Root, name + ".png"), ImageFormat.Png);
         }
+    }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
+    private static void CheckChrome(MainForm form)
+    {
+        Check(form.ClientSize.Width == 1280, "Approved window width is not 1280");
+        Check(form.FormBorderStyle == FormBorderStyle.None, "Legacy titlebar still present");
+        Check(((Control)Field(form, "titlebar")).Height == 48, "Integrated caption height wrong");
+        Check(form.WindowHitTest(new Point(350, 24)) == 2, "Caption cannot drag/double-click");
+        Check(form.WindowHitTest(new Point(form.ClientSize.Width - 22, 24)) == 1, "Caption steals close-button input");
+        Check(form.WindowHitTest(new Point(1, 1)) == 13 && form.WindowHitTest(new Point(form.ClientSize.Width - 1, form.ClientSize.Height - 1)) == 17, "Corner resizing lost");
+        Point caption = form.PointToScreen(new Point(350, 24));
+        IntPtr packed = new IntPtr(unchecked((int)(((uint)(ushort)caption.Y << 16) | (ushort)caption.X)));
+        Check(SendMessage(form.Handle, 0x84, IntPtr.Zero, packed).ToInt32() == 2, "Native caption hit test failed on negative coordinates");
+        Check(((CardPanel)Field(form, "selectCard")).PaperTape, "Approved tape missing");
+        Size original = form.Size;
+        SendMessage(form.Handle, 0xA3, new IntPtr(2), packed); Pump(80);
+        Check(form.WindowState == FormWindowState.Maximized, "Native caption double-click did not maximize");
+        SendMessage(form.Handle, 0xA3, new IntPtr(2), packed); Pump(80);
+        Check(form.WindowState == FormWindowState.Normal && form.Size == original, "Native caption double-click restore failed");
+        ((Button)Field(form, "maximizeWindowButton")).PerformClick(); Pump(80);
+        Check(form.WindowState == FormWindowState.Maximized, "Maximize button failed");
+        Check(form.RectangleToScreen(form.ClientRectangle) == Screen.FromHandle(form.Handle).WorkingArea, "Maximized client " + form.RectangleToScreen(form.ClientRectangle) + " vs work area " + Screen.FromHandle(form.Handle).WorkingArea);
+        Check(((Control)Field(form, "maximizeWindowButton")).AccessibleName == "还原窗口", "Restore accessible label wrong");
+        ((Button)Field(form, "maximizeWindowButton")).PerformClick(); Pump(80);
+        Check(form.WindowState == FormWindowState.Normal && form.Size == original, "Restore changed original size " + original + " => " + form.Size + " state " + form.WindowState);
+        ((Button)Field(form, "minimizeWindowButton")).PerformClick(); Pump(40);
+        Check(form.WindowState == FormWindowState.Minimized, "Minimize button failed");
+        SendMessage(form.Handle, 0x112, new IntPtr(0xF120), IntPtr.Zero);
+        ((Button)Field(form, "closeWindowButton")).PerformClick(); Pump(40);
+        Check(!form.Visible && !form.IsDisposed && ((NotifyIcon)Field(form, "trayIcon")).Visible, "Close no longer hides to tray");
+        form.Show(); Pump(40);
+        Console.WriteLine("PASS 1280 width, native caption hit test, resizing, maximize work area, restore, minimize and close-to-tray");
     }
     private static void CheckNavigation(MainForm form, TabControl tabs, int index)
     {
@@ -63,6 +196,7 @@ internal static class WorkspaceUiTests
                 && !MainForm.IsSupportedDrop(new DataObject(DataFormats.FileDrop, new[] { video + ".missing" })), "Invalid drop accepted");
             Console.WriteLine("PASS single-video drop validation and invalid input rejection");
             Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+            CheckEffects();
             using (MainForm form = new MainForm(true, false, null))
             {
                 form.Shown -= (EventHandler)Delegate.CreateDelegate(typeof(EventHandler), form, typeof(MainForm).GetMethod("FormShown", Flags));
@@ -70,20 +204,46 @@ internal static class WorkspaceUiTests
                 form.Location = new Point(-32000, -32000); form.Show();
                 Call(form, "SetAppStatus", "待命", MoyuPalette.Blue);
                 TabControl tabs = (TabControl)Field(form, "tabs");
+                CheckChrome(form);
                 CheckNavigation(form, tabs, 0); Capture(form, "task-empty");
+                MoyuHeroPanel hero = (MoyuHeroPanel)Field(form, "taskHero");
+                Check(!hero.Compact && !((Control)Field(form, "progressCard")).Visible, "Ready screen must feature artwork, not empty progress");
+                Check(MoyuArtwork.Hero.Width >= 1080 && MoyuArtwork.Logo.Width >= 256, "Embedded artwork missing or undersized");
+                MoyuNavButton selectedNav = ((List<MoyuNavButton>)Field(form, "navigation")).Single(delegate(MoyuNavButton b) { return b.Selected; });
+                using (Bitmap navImage = new Bitmap(selectedNav.Width, selectedNav.Height))
+                {
+                    selectedNav.DrawToBitmap(navImage, selectedNav.ClientRectangle);
+                    Color sample = navImage.GetPixel(selectedNav.Width - 20, selectedNav.Height / 2);
+                    Check(Math.Abs(sample.R - MoyuPalette.Yellow.R) < 16 && Math.Abs(sample.G - MoyuPalette.Yellow.G) < 16 && Math.Abs(sample.B - MoyuPalette.Yellow.B) < 16, "Selected navigation must retain the approved yellow fill under subtle grain");
+                }
+                Console.WriteLine("PASS approved artwork, ready-state hierarchy and blue/yellow navigation");
+                Size normalSize = form.Size;
+                form.Size = form.MinimumSize; Capture(form, "task-empty-min");
+                FlowLayoutPanel taskFlow = (FlowLayoutPanel)Field(form, "taskCanvas");
+                Check(!taskFlow.HorizontalScroll.Visible, "Minimum ready layout has horizontal scrolling");
+                form.Size = normalSize;
                 Button start = (Button)Field(form, "startButton"), cancel = (Button)Field(form, "cancelButton");
                 Check(!start.Enabled && !cancel.Enabled, "Empty task buttons wrong");
                 Call(form, "SelectMedia", video); Check(start.Enabled, "Selected video cannot start");
                 Call(form, "SetProcessingState", video, true);
                 Call(form, "UpdateProgress", new ProgressInfo("正在翻译对白", "正在处理第 8 / 12 个场景；视频可以继续播放。", 68));
                 Check(!start.Enabled && cancel.Enabled, "Processing buttons wrong");
+                Check(hero.Compact && ((Control)Field(form, "progressCard")).Visible, "Active task must compact the hero and reveal real progress");
+                Check(((MoyuProgressBar)Field(form, "progressBar")).FillColor == MoyuPalette.Yellow, "Running progress palette wrong");
                 Capture(form, "task-progress");
                 Call(form, "SelectMedia", other);
                 Check(((Label)Field(form, "elapsedLabel")).Text.Contains(Path.GetFileName(video)), "Active task confused with newly selected media");
                 Call(form, "UpdateProgress", new ProgressInfo("双语字幕已完成", "三个版本已归档。", 100));
                 Call(form, "SetProcessingState", video, false);
                 Check(start.Enabled && !cancel.Enabled && !((MoyuStageStrip)Field(form, "stageStrip")).Running, "Completion state wrong");
-                Console.WriteLine("PASS task selection, running/completion states and active-media identity");
+                Capture(form, "task-complete");
+                Check(((MoyuProgressBar)Field(form, "progressBar")).Value == 100, "Real completion progress lost");
+                Call(form, "SetProcessingState", video, true);
+                Call(form, "UpdateProgress", new ProgressInfo("生成失败", "测试错误反馈，不访问翻译服务。", 12));
+                Call(form, "SetProcessingState", video, false);
+                Check(((Label)Field(form, "progressStageLabel")).Text == "生成失败" && ((MoyuProgressBar)Field(form, "progressBar")).Value == 12, "Theme masks failed task as completion");
+                Capture(form, "task-error");
+                Console.WriteLine("PASS task selection, running/completion/error states and active-media identity");
                 CheckNavigation(form, tabs, 1); CheckSettingsBounds(form); Capture(form, "settings");
                 SourceLanguageComboBox language = (SourceLanguageComboBox)Field(form, "sourceLanguageBox");
                 Check(language.SourceLanguage == "ja", "Default source language changed");

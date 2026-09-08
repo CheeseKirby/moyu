@@ -31,7 +31,6 @@ namespace PotPlayerAiSubtitle
         private readonly TabControl tabs;
         private readonly TabPage taskTab;
         private readonly TabPage settingsTab;
-        private readonly Label appStatusLabel;
         private readonly Panel taskCanvas;
         private readonly CardPanel detectedCard;
         private readonly CardPanel selectCard;
@@ -75,13 +74,13 @@ namespace PotPlayerAiSubtitle
 
         private static Label CreateLabel(string text, int left, int top, int width, int height, float size, FontStyle style, Color color)
         {
-            return new Label { AutoEllipsis = true, UseMnemonic = false, Text = text, Left = left, Top = top, Width = width, Height = height, Font = new Font("Microsoft YaHei UI", size, style), ForeColor = color };
+            return new Label { BackColor = Color.Transparent, AutoEllipsis = true, UseMnemonic = false, Text = text, Left = left, Top = top, Width = width, Height = height, Font = new Font(MoyuTypography.FamilyName, MoyuTypography.LabelSize(size), style), ForeColor = color };
         }
 
 
         private static Button CreateButton(string text, Color backColor, Color foreColor, int left, int top, int width, int height)
         {
-            MoyuButton button = new MoyuButton { Text = text, Left = left, Top = top, Width = width, Height = height, BackColor = backColor, ForeColor = foreColor, Cursor = Cursors.Hand, Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold) };
+            MoyuButton button = new MoyuButton { Text = text, Left = left, Top = top, Width = width, Height = height, BackColor = backColor, ForeColor = foreColor, Cursor = Cursors.Hand, Font = new Font(MoyuTypography.FamilyName, 10.5F, FontStyle.Regular) };
             button.HoverBackColor = MoyuDrawing.Blend(backColor, Color.White, 0.14f);
             return button;
         }
@@ -283,6 +282,9 @@ namespace PotPlayerAiSubtitle
                 if (File.Exists(selectedPathBox.Text)) SelectMedia(selectedPathBox.Text);
                 if (tabs.SelectedTab == libraryTab) RefreshLibrary();
             }
+            taskHero.SetTaskState(true, processing);
+            progressCard.Visible = true;
+            taskCanvas.PerformLayout();
             stageStrip.Running = processing; stageStrip.Invalidate();
             startButton.Enabled = !processing && File.Exists(selectedPathBox.Text);
             cancelButton.Enabled = processing;
@@ -296,7 +298,7 @@ namespace PotPlayerAiSubtitle
             progressStageLabel.Text = info.Stage;
             progressDetailLabel.Text = info.Detail;
             progressBar.Value = percent;
-            progressBar.FillColor = percent == 100 ? SuccessColor : AccentColor;
+            progressBar.FillColor = percent == 100 ? MoyuPalette.Green : MoyuPalette.Yellow;
             stageStrip.Percent = percent; stageStrip.Invalidate();
             toolTips.SetToolTip(progressDetailLabel, info.Detail);
             progressPercentLabel.Text = percent + "%";
@@ -488,7 +490,7 @@ namespace PotPlayerAiSubtitle
         private void ShowAndActivate()
         {
             Show();
-            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            if (WindowState == FormWindowState.Minimized) SendWindowCommand(0xF120);
             TopMost = true;
             Activate();
             System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 600 };
@@ -500,10 +502,7 @@ namespace PotPlayerAiSubtitle
         {
             if (IsDisposed || shuttingDown) return;
             if (InvokeRequired) { BeginInvoke(new Action<string, Color>(SetAppStatus), text, color); return; }
-            appStatusLabel.Text = "●  " + text;
-            appStatusLabel.ForeColor = color;
-            appStatusLabel.BackColor = MoyuDrawing.Blend(Color.White, color, 0.10f);
-            appStatusLabel.Invalidate();
+            titlebar.SetStatus(text, color);
         }
 
         private static void PlayCompletionSound()
@@ -567,12 +566,15 @@ namespace PotPlayerAiSubtitle
         public Color BorderColor { get; set; }
         public Color AccentColor { get; set; }
         public int CornerRadius { get; set; }
+        public bool PaperTape { get; set; }
+        public bool Shadow { get; set; }
 
         public CardPanel()
         {
             BorderColor = MoyuPalette.Border;
             AccentColor = Color.Transparent;
-            CornerRadius = 12;
+            CornerRadius = 9;
+            Shadow = false;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.SupportsTransparentBackColor, true);
         }
 
@@ -580,8 +582,15 @@ namespace PotPlayerAiSubtitle
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             Color outside = Parent == null ? MoyuPalette.Page : Parent.BackColor;
-            e.Graphics.Clear(outside);
-            Rectangle card = new Rectangle(1, 1, Math.Max(1, Width - 4), Math.Max(1, Height - 4));
+            MoyuSurface.Background(e.Graphics, this, outside);
+            int inset = PaperTape ? (int)(11 * e.Graphics.DpiY / 96f) : 0;
+            Rectangle card = new Rectangle(1, 1 + inset, Math.Max(1, Width - 4), Math.Max(1, Height - 4 - inset));
+            if (Shadow)
+            {
+                Rectangle shadow = card; shadow.Offset(0, (int)Math.Max(2, 4 * e.Graphics.DpiY / 96f));
+                using (GraphicsPath shadowPath = MoyuDrawing.RoundedRectangle(shadow, CornerRadius))
+                using (SolidBrush shade = new SolidBrush(Color.FromArgb(26, MoyuPalette.Ink))) e.Graphics.FillPath(shade, shadowPath);
+            }
             using (GraphicsPath path = MoyuDrawing.RoundedRectangle(card, CornerRadius))
             using (SolidBrush brush = new SolidBrush(BackColor)) e.Graphics.FillPath(brush, path);
         }
@@ -589,9 +598,18 @@ namespace PotPlayerAiSubtitle
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            Rectangle card = new Rectangle(1, 1, Math.Max(1, Width - 4), Math.Max(1, Height - 4));
+            int inset = PaperTape ? (int)(11 * e.Graphics.DpiY / 96f) : 0;
+            Rectangle card = new Rectangle(1, 1 + inset, Math.Max(1, Width - 4), Math.Max(1, Height - 4 - inset));
             using (GraphicsPath path = MoyuDrawing.RoundedRectangle(card, CornerRadius))
-            using (Pen pen = new Pen(BorderColor)) e.Graphics.DrawPath(pen, path);
+            using (Pen pen = new Pen(BorderColor, BorderColor == MoyuPalette.Ink ? 1.3f : 1f)) e.Graphics.DrawPath(pen, path);
+            if (PaperTape)
+            {
+                GraphicsState state = e.Graphics.Save();
+                float scale = e.Graphics.DpiX / 96f; e.Graphics.ScaleTransform(scale, scale);
+                using (Brush tape = new SolidBrush(Color.FromArgb(242, 218, 143)))
+                    e.Graphics.FillPolygon(tape, new[] { new Point(24, 10), new Point(105, 1), new Point(103, 7), new Point(107, 13), new Point(105, 21), new Point(25, 30), new Point(27, 23), new Point(23, 17) });
+                e.Graphics.Restore(state);
+            }
             if (AccentColor.A > 0)
             {
                 Rectangle accent = new Rectangle(1, 18, 5, Math.Max(12, Height - 40));

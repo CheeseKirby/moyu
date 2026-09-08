@@ -1,0 +1,95 @@
+{
+  "kind": "visual-prototype-only",
+  "passed": 24,
+  "checks": [
+    "默认显示等待视频",
+    "默认源语言为日语",
+    "保留全部 12 个语言选项",
+    "两页语言选择同步",
+    "处理中状态可切换",
+    "任务信息反映所选语言",
+    "取消示例任务返回待机",
+    "本地选择仅显示文件名",
+    "所选视频可进入模拟状态",
+    "完成状态可切换",
+    "示意操作明确告知不会启动播放器",
+    "下一段视频重置文件选择",
+    "字幕库导航可用",
+    "设置导航可用",
+    "无页面脚本异常",
+    "1440px ready 布局不横向溢出、图形完整",
+    "1440px busy 布局不横向溢出、图形完整",
+    "1440px done 布局不横向溢出、图形完整",
+    "1040px ready 布局不横向溢出、图形完整",
+    "1040px busy 布局不横向溢出、图形完整",
+    "1040px done 布局不横向溢出、图形完整",
+    "640px ready 布局不横向溢出、图形完整",
+    "640px busy 布局不横向溢出、图形完整",
+    "640px done 布局不横向溢出、图形完整"
+  ],
+  "layouts": [
+    {
+      "width": 1440,
+      "state": "ready",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 1440,
+      "state": "busy",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 1440,
+      "state": "done",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 1040,
+      "state": "ready",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 1040,
+      "state": "busy",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 1040,
+      "state": "done",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 640,
+      "state": "ready",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 640,
+      "state": "busy",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    },
+    {
+      "width": 640,
+      "state": "done",
+      "overflow": false,
+      "contentOverflow": false,
+      "images": true
+    }
+  ]
+}

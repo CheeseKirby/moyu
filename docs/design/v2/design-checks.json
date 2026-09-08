@@ -1,0 +1,727 @@
+{
+  "date": "2026-09-07",
+  "scope": "Browser visual prototype only; not native WinForms/runtime verification",
+  "checks": [
+    {
+      "name": "Japanese default",
+      "pass": true
+    },
+    {
+      "name": "Language options match native application",
+      "pass": true
+    },
+    {
+      "name": "Language sync ja",
+      "pass": true
+    },
+    {
+      "name": "Language sync en",
+      "pass": true
+    },
+    {
+      "name": "Language sync ko",
+      "pass": true
+    },
+    {
+      "name": "Language sync zh",
+      "pass": true
+    },
+    {
+      "name": "Language sync fr",
+      "pass": true
+    },
+    {
+      "name": "Language sync de",
+      "pass": true
+    },
+    {
+      "name": "Language sync es",
+      "pass": true
+    },
+    {
+      "name": "Language sync it",
+      "pass": true
+    },
+    {
+      "name": "Language sync pt",
+      "pass": true
+    },
+    {
+      "name": "Language sync ru",
+      "pass": true
+    },
+    {
+      "name": "Language sync th",
+      "pass": true
+    },
+    {
+      "name": "Language sync vi",
+      "pass": true
+    },
+    {
+      "name": "Settings language sync back",
+      "pass": true
+    },
+    {
+      "name": "Setting switch responds locally",
+      "pass": true
+    },
+    {
+      "name": "Setting reset on reload",
+      "pass": true
+    },
+    {
+      "name": "Library language filter",
+      "pass": true
+    },
+    {
+      "name": "Library empty result",
+      "pass": true
+    },
+    {
+      "name": "Library keyword search",
+      "pass": true
+    },
+    {
+      "name": "Filename-only file selection",
+      "pass": true
+    },
+    {
+      "name": "Selected file opens simulated progress",
+      "pass": true
+    },
+    {
+      "name": "Cancel preview returns to ready",
+      "pass": true
+    },
+    {
+      "name": "Mock playback explicitly identified",
+      "pass": true
+    },
+    {
+      "name": "Next file resets ready screen",
+      "pass": true
+    },
+    {
+      "name": "Reject invalid input",
+      "pass": true
+    },
+    {
+      "name": "Video drop selection",
+      "pass": true
+    },
+    {
+      "name": "Direct progress-state URL",
+      "pass": true
+    },
+    {
+      "name": "Invalid state falls back safely",
+      "pass": true
+    },
+    {
+      "name": "Layout 1440 ready",
+      "pass": true,
+      "details": {
+        "body": 1440,
+        "window": 1440,
+        "content": 1150,
+        "contentScroll": 1150,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1440 busy",
+      "pass": true,
+      "details": {
+        "body": 1440,
+        "window": 1440,
+        "content": 1150,
+        "contentScroll": 1150,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1440 done",
+      "pass": true,
+      "details": {
+        "body": 1440,
+        "window": 1440,
+        "content": 1150,
+        "contentScroll": 1150,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1440 library",
+      "pass": true,
+      "details": {
+        "body": 1440,
+        "window": 1440,
+        "content": 1150,
+        "contentScroll": 1150,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1440 settings",
+      "pass": true,
+      "details": {
+        "body": 1440,
+        "window": 1440,
+        "content": 1150,
+        "contentScroll": 1150,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1280 ready",
+      "pass": true,
+      "details": {
+        "body": 1280,
+        "window": 1280,
+        "content": 1038,
+        "contentScroll": 1038,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1280 busy",
+      "pass": true,
+      "details": {
+        "body": 1280,
+        "window": 1280,
+        "content": 1038,
+        "contentScroll": 1038,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1280 done",
+      "pass": true,
+      "details": {
+        "body": 1280,
+        "window": 1280,
+        "content": 1038,
+        "contentScroll": 1038,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1280 library",
+      "pass": true,
+      "details": {
+        "body": 1280,
+        "window": 1280,
+        "content": 1038,
+        "contentScroll": 1038,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1280 settings",
+      "pass": true,
+      "details": {
+        "body": 1280,
+        "window": 1280,
+        "content": 1038,
+        "contentScroll": 1038,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1040 ready",
+      "pass": true,
+      "details": {
+        "body": 1040,
+        "window": 1040,
+        "content": 823,
+        "contentScroll": 823,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1040 busy",
+      "pass": true,
+      "details": {
+        "body": 1040,
+        "window": 1040,
+        "content": 823,
+        "contentScroll": 823,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1040 done",
+      "pass": true,
+      "details": {
+        "body": 1040,
+        "window": 1040,
+        "content": 823,
+        "contentScroll": 823,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1040 library",
+      "pass": true,
+      "details": {
+        "body": 1040,
+        "window": 1040,
+        "content": 823,
+        "contentScroll": 823,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 1040 settings",
+      "pass": true,
+      "details": {
+        "body": 1040,
+        "window": 1040,
+        "content": 823,
+        "contentScroll": 823,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 640 ready",
+      "pass": true,
+      "details": {
+        "body": 640,
+        "window": 640,
+        "content": 538,
+        "contentScroll": 538,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 640 busy",
+      "pass": true,
+      "details": {
+        "body": 640,
+        "window": 640,
+        "content": 538,
+        "contentScroll": 538,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 640 done",
+      "pass": true,
+      "details": {
+        "body": 640,
+        "window": 640,
+        "content": 538,
+        "contentScroll": 538,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 640 library",
+      "pass": true,
+      "details": {
+        "body": 640,
+        "window": 640,
+        "content": 538,
+        "contentScroll": 538,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 640 settings",
+      "pass": true,
+      "details": {
+        "body": 640,
+        "window": 640,
+        "content": 538,
+        "contentScroll": 538,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 390 ready",
+      "pass": true,
+      "details": {
+        "body": 390,
+        "window": 390,
+        "content": 288,
+        "contentScroll": 288,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 390 busy",
+      "pass": true,
+      "details": {
+        "body": 390,
+        "window": 390,
+        "content": 288,
+        "contentScroll": 288,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 390 done",
+      "pass": true,
+      "details": {
+        "body": 390,
+        "window": 390,
+        "content": 288,
+        "contentScroll": 288,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 390 library",
+      "pass": true,
+      "details": {
+        "body": 390,
+        "window": 390,
+        "content": 288,
+        "contentScroll": 288,
+        "images": true
+      }
+    },
+    {
+      "name": "Layout 390 settings",
+      "pass": true,
+      "details": {
+        "body": 390,
+        "window": 390,
+        "content": 288,
+        "contentScroll": 288,
+        "images": true
+      }
+    },
+    {
+      "name": "No browser script errors",
+      "pass": true,
+      "details": []
+    },
+    {
+      "name": "Primary text color-pair contrast",
+      "pass": true,
+      "details": [
+        {
+          "name": "primary white / blue",
+          "ratio": 4.75
+        },
+        {
+          "name": "sidebar text / blue",
+          "ratio": 4.53
+        },
+        {
+          "name": "body muted / cream",
+          "ratio": 4.85
+        },
+        {
+          "name": "ink / yellow",
+          "ratio": 9.72
+        }
+      ]
+    }
+  ],
+  "geometry": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screen": "ready",
+      "body": 1440,
+      "window": 1440,
+      "content": 1150,
+      "contentScroll": 1150,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screen": "busy",
+      "body": 1440,
+      "window": 1440,
+      "content": 1150,
+      "contentScroll": 1150,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screen": "done",
+      "body": 1440,
+      "window": 1440,
+      "content": 1150,
+      "contentScroll": 1150,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screen": "library",
+      "body": 1440,
+      "window": 1440,
+      "content": 1150,
+      "contentScroll": 1150,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "screen": "settings",
+      "body": 1440,
+      "window": 1440,
+      "content": 1150,
+      "contentScroll": 1150,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "screen": "ready",
+      "body": 1280,
+      "window": 1280,
+      "content": 1038,
+      "contentScroll": 1038,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "screen": "busy",
+      "body": 1280,
+      "window": 1280,
+      "content": 1038,
+      "contentScroll": 1038,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "screen": "done",
+      "body": 1280,
+      "window": 1280,
+      "content": 1038,
+      "contentScroll": 1038,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "screen": "library",
+      "body": 1280,
+      "window": 1280,
+      "content": 1038,
+      "contentScroll": 1038,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 900
+      },
+      "screen": "settings",
+      "body": 1280,
+      "window": 1280,
+      "content": 1038,
+      "contentScroll": 1038,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1040,
+        "height": 900
+      },
+      "screen": "ready",
+      "body": 1040,
+      "window": 1040,
+      "content": 823,
+      "contentScroll": 823,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1040,
+        "height": 900
+      },
+      "screen": "busy",
+      "body": 1040,
+      "window": 1040,
+      "content": 823,
+      "contentScroll": 823,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1040,
+        "height": 900
+      },
+      "screen": "done",
+      "body": 1040,
+      "window": 1040,
+      "content": 823,
+      "contentScroll": 823,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1040,
+        "height": 900
+      },
+      "screen": "library",
+      "body": 1040,
+      "window": 1040,
+      "content": 823,
+      "contentScroll": 823,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 1040,
+        "height": 900
+      },
+      "screen": "settings",
+      "body": 1040,
+      "window": 1040,
+      "content": 823,
+      "contentScroll": 823,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 640,
+        "height": 1000
+      },
+      "screen": "ready",
+      "body": 640,
+      "window": 640,
+      "content": 538,
+      "contentScroll": 538,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 640,
+        "height": 1000
+      },
+      "screen": "busy",
+      "body": 640,
+      "window": 640,
+      "content": 538,
+      "contentScroll": 538,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 640,
+        "height": 1000
+      },
+      "screen": "done",
+      "body": 640,
+      "window": 640,
+      "content": 538,
+      "contentScroll": 538,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 640,
+        "height": 1000
+      },
+      "screen": "library",
+      "body": 640,
+      "window": 640,
+      "content": 538,
+      "contentScroll": 538,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 640,
+        "height": 1000
+      },
+      "screen": "settings",
+      "body": 640,
+      "window": 640,
+      "content": 538,
+      "contentScroll": 538,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "screen": "ready",
+      "body": 390,
+      "window": 390,
+      "content": 288,
+      "contentScroll": 288,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "screen": "busy",
+      "body": 390,
+      "window": 390,
+      "content": 288,
+      "contentScroll": 288,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "screen": "done",
+      "body": 390,
+      "window": 390,
+      "content": 288,
+      "contentScroll": 288,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "screen": "library",
+      "body": 390,
+      "window": 390,
+      "content": 288,
+      "contentScroll": 288,
+      "images": true
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 900
+      },
+      "screen": "settings",
+      "body": 390,
+      "window": 390,
+      "content": 288,
+      "contentScroll": 288,
+      "images": true
+    }
+  ],
+  "errors": []
+}

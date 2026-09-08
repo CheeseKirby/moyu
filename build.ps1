@@ -21,6 +21,8 @@ $args = @(
   '/debug:pdbonly',
   "/out:$output",
   "/win32icon:$icon",
+  "/resource:$root\Assets\Brand\Hero.png,Moyu.Brand.Hero.png",
+  "/resource:$root\Assets\Brand\Logo.png,Moyu.Brand.Logo.png",
   '/reference:System.dll',
   '/reference:System.Core.dll',
   '/reference:System.Drawing.dll',

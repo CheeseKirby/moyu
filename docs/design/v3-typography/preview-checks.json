@@ -1,0 +1,62 @@
+{
+  "checks": [
+    {
+      "name": "task selected and no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "settings selected and no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "library selected and no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "language summary responds immediately",
+      "passed": true
+    },
+    {
+      "name": "video enables primary action",
+      "passed": true
+    },
+    {
+      "name": "generation explicitly remains a preview",
+      "passed": true
+    },
+    {
+      "name": "maximize preview fits viewport",
+      "passed": true
+    },
+    {
+      "name": "Escape restores window preview",
+      "passed": true
+    },
+    {
+      "name": "switch is keyboard accessible and toggles",
+      "passed": true
+    },
+    {
+      "name": "save explicitly avoids real settings",
+      "passed": true
+    },
+    {
+      "name": "task 1040px viewport has no horizontal scroll",
+      "passed": true
+    },
+    {
+      "name": "settings 1040px viewport has no horizontal scroll",
+      "passed": true
+    },
+    {
+      "name": "reduced motion removes transitions",
+      "passed": true
+    },
+    {
+      "name": "no browser script errors",
+      "passed": true
+    }
+  ],
+  "font": "Noto Sans SC (confirmed by browser platform-font inspection)",
+  "scope": "Browser prototype only. Not native title-bar or DPI integration verification."
+}

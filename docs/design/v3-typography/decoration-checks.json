@@ -1,0 +1,44 @@
+{
+  "checks": [
+    {
+      "name": "Typography and primary layout unchanged",
+      "passed": true
+    },
+    {
+      "name": "Only two decorative elements, hidden from assistive technology",
+      "passed": true
+    },
+    {
+      "name": "Decorations do not intercept controls",
+      "passed": true
+    },
+    {
+      "name": "Original hero artwork unchanged",
+      "passed": true
+    },
+    {
+      "name": "Default Japanese and empty-file disabled action",
+      "passed": true
+    },
+    {
+      "name": "File selection still enables action",
+      "passed": true
+    },
+    {
+      "name": "Settings navigation works",
+      "passed": true
+    },
+    {
+      "name": "Library navigation works",
+      "passed": true
+    },
+    {
+      "name": "Compact window has no horizontal overflow",
+      "passed": true
+    },
+    {
+      "name": "Sidebar decoration clears navigation",
+      "passed": true
+    }
+  ]
+}

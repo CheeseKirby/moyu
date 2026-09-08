@@ -14,10 +14,13 @@ namespace PotPlayerAiSubtitle
     {
         internal const string AppMutexName = WatcherContract.AppMutexName;
         private const string WakeEventName = "Local\\PotPlayerAiSubtitleAppWake-v2";
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
 
         [STAThread]
         private static int Main(string[] args)
         {
+            try { SetProcessDPIAware(); } catch { }
             StoragePaths.Ensure();
             try
             {
