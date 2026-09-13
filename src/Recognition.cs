@@ -31,6 +31,12 @@ namespace PotPlayerAiSubtitle
         private const string SegmentedRecognitionVersion = "local-whisper-segmented-v2";
         private readonly AppConfig config;
         private readonly Action<string, string, int> progress;
+        private TermIndex qualityTermIndex;
+
+        private bool IsQuality
+        {
+            get { return string.Equals(config.TranslationQuality, "quality", StringComparison.OrdinalIgnoreCase); }
+        }
 
         public SourceSubtitleRecognizer(AppConfig config, Action<string, string, int> progress)
         {
@@ -80,6 +86,8 @@ namespace PotPlayerAiSubtitle
         public RecognitionCandidateResult RecognizeLocalCandidate(string mediaPath, string cacheDir, string rawPath,
             string candidatePath, string reportPath, CancellationToken cancellation)
         {
+            if (IsQuality && qualityTermIndex == null) qualityTermIndex = TermIndexStore.Load(cacheDir);
+
             string ffmpeg = ToolProcess.ResolveExecutable(config.FfmpegPath, "ffmpeg.exe");
             if (string.IsNullOrEmpty(ffmpeg)) throw new FileNotFoundException("没有找到 ffmpeg.exe。", config.FfmpegPath);
             if (!File.Exists(config.WhisperPath)) throw new FileNotFoundException("没有找到 PotPlayer 的 Whisper 命令行程序。", config.WhisperPath);
@@ -114,6 +122,8 @@ namespace PotPlayerAiSubtitle
                 List<SubtitleCue> retried = new List<SubtitleCue>(initial);
                 int retriedCueCount = RetryRanges(retried, audio, retryRanges, temporary, 0,
                     "正在复核可疑片段", 38, 5, cancellation);
+
+                if (IsQuality) retried = ApplyQualityTermIndex(retried, cacheDir, cancellation);
 
                 SubtitleSanitizeResult sanitized = SubtitleQuality.SanitizeAfterRetry(retried);
                 List<SubtitleCue> candidateCues = sanitized.Cues;
@@ -169,6 +179,35 @@ namespace PotPlayerAiSubtitle
             if (result == null || string.IsNullOrEmpty(result.AudioPath)) return;
             try { File.Delete(result.AudioPath + ".ready"); } catch { }
             try { File.Delete(result.AudioPath); } catch { }
+        }
+
+        private List<SubtitleCue> ApplyQualityTermIndex(List<SubtitleCue> cues, string cacheDir, CancellationToken cancellation)
+        {
+            try
+            {
+                if (qualityTermIndex != null && !qualityTermIndex.IsEmpty)
+                    return new List<SubtitleCue>(qualityTermIndex.ApplySpellCorrection(cues));
+
+                // No cached term index yet: build it from this recognition pass, then correct the names.
+                List<string> candidates = TermBuilder.ExtractCandidates(cues);
+                List<string> context = TermBuilder.BuildContext(cues, candidates);
+                if (context.Count == 0) return cues;
+                string key = CredentialStore.ReadApiKey();
+                if (string.IsNullOrWhiteSpace(key)) return cues;
+
+                if (qualityTermIndex == null) qualityTermIndex = new TermIndex { SourceLanguage = config.SourceLanguage };
+                DeepSeekClient client = new DeepSeekClient(config, key);
+                qualityTermIndex.Entries = client.BuildTermIndex(candidates, context, new Dictionary<string, string>(), cancellation);
+                if (qualityTermIndex.IsEmpty) return cues;
+                TermIndexStore.Save(cacheDir, qualityTermIndex);
+                return new List<SubtitleCue>(qualityTermIndex.ApplySpellCorrection(cues));
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Logger.Write("Quality term-index pass failed: " + ex.Message);
+                return cues;
+            }
         }
 
         private RecognitionCandidateResult WriteTrustedCandidate(List<SubtitleCue> cues, string sourceKind, string candidatePath, string reportPath)
@@ -246,7 +285,7 @@ namespace PotPlayerAiSubtitle
 
         private string EnsureAudio(string mediaPath, string cacheDir, string ffmpeg, CancellationToken cancellation)
         {
-            string audio = Path.Combine(cacheDir, "audio-16k.wav");
+            string audio = Path.Combine(cacheDir, IsQuality ? "audio-16k.quality.wav" : "audio-16k.wav");
             string ready = audio + ".ready";
             if (File.Exists(audio) && File.Exists(ready) && new FileInfo(audio).Length > 1024)
             {
@@ -258,7 +297,8 @@ namespace PotPlayerAiSubtitle
             try { File.Delete(audio); } catch { }
             Report("正在提取音频", "生成供本地 Whisper 使用的单声道音频。", 15);
             string args = "-nostdin -hide_banner -loglevel error -y -i " + ToolProcess.Quote(mediaPath)
-                + " -vn -ac 1 -ar 16000 -c:a pcm_s16le " + ToolProcess.Quote(audio);
+                + (IsQuality ? " -af loudnorm=I=-16:TP=-1.5:LRA=11,highpass=f=60 " : " ")
+                + "-vn -ac 1 -ar 16000 -c:a pcm_s16le " + ToolProcess.Quote(audio);
             int code = ToolProcess.Run(ffmpeg, args, cacheDir, cancellation, false);
             if (code != 0 || !File.Exists(audio) || new FileInfo(audio).Length <= 1024)
                 throw new InvalidOperationException("音频提取失败。请查看 Logs\\worker.log。");
@@ -364,6 +404,7 @@ namespace PotPlayerAiSubtitle
                 + " -f " + ToolProcess.Quote(ToolProcess.RelativePathUnder(clip, playerRoot))
                 + " -l " + config.SourceLanguage + " -osrt -t " + threads.ToString(CultureInfo.InvariantCulture)
                 + " -p 1 --vad -vm " + ToolProcess.Quote(ToolProcess.RelativePathUnder(config.WhisperVadModelPath, playerRoot))
+                + (IsQuality && qualityTermIndex != null && qualityTermIndex.Prompt() != "" ? " --prompt " + ToolProcess.Quote(qualityTermIndex.Prompt()) + " --carry-initial-prompt" : "")
                 + (retry ? " -vt 0.45 -vspd 180 -vsd 400 -vmsd 20 -vp 120 -vo 0.08" : " -vt 0.35 -vspd 180 -vsd 300 -vmsd 25 -vp 150 -vo 0.10")
                 + " -mc 0 -ml 42 -nf -sns -of " + ToolProcess.Quote(ToolProcess.RelativePathUnder(outputBase, playerRoot));
             return args;

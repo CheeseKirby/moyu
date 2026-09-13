@@ -14,6 +14,7 @@ namespace PotPlayerAiSubtitle
         public bool CacheHit { get; set; }
         public string QualityWarning { get; set; }
         public string PublishWarning { get; set; }
+        public string QualitySummary { get; set; }
     }
 
     internal sealed class SubtitlePipelineRunner
@@ -21,12 +22,14 @@ namespace PotPlayerAiSubtitle
         private readonly AppConfig config;
         private readonly IProgress<ProgressInfo> progress;
         private readonly Func<bool> ensureApiKey;
+        private readonly Func<string> readApiKey;
 
-        public SubtitlePipelineRunner(AppConfig config, IProgress<ProgressInfo> progress, Func<bool> ensureApiKey)
+        public SubtitlePipelineRunner(AppConfig config, IProgress<ProgressInfo> progress, Func<bool> ensureApiKey, Func<string> readApiKey = null)
         {
             this.config = config;
             this.progress = progress;
             this.ensureApiKey = ensureApiKey;
+            this.readApiKey = readApiKey ?? CredentialStore.ReadApiKey;
         }
 
         public PipelineResult Process(string mediaPath, CancellationToken cancellation)
@@ -55,27 +58,10 @@ namespace PotPlayerAiSubtitle
             manifest.FileSize = new FileInfo(mediaPath).Length;
             if (string.IsNullOrEmpty(manifest.FirstSeenPath)) manifest.FirstSeenPath = mediaPath;
             manifest.LastSeenPath = mediaPath;
-            manifest.RecognitionModel = Path.GetFileName(config.WhisperModelPath);
-            manifest.TranslationModel = config.Model;
+            // Keep source provenance when reusing an accepted source subtitle.
+            if (!File.Exists(sourcePath)) manifest.RecognitionModel = Path.GetFileName(config.WhisperModelPath);
             manifest.UpdatedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
             manifest.Error = null;
-
-            if (File.Exists(chinesePath) && File.Exists(bilingualPath))
-            {
-                manifest.Status = "complete";
-                AtomicJson.Write(manifestPath, manifest);
-                Report("已命中字幕缓存", "找到相同视频内容的完整字幕。", 100);
-                string currentPath = FindMatchingCurrentMedia(fingerprint, mediaPath);
-                SubtitlePublishResult published = SubtitlePublisher.Publish(config, currentPath, sourcePath, chinesePath, bilingualPath);
-                return new PipelineResult
-                {
-                    Fingerprint = fingerprint,
-                    BilingualSubtitlePath = published.BilingualSidecarPath ?? bilingualPath,
-                    CacheHit = true,
-                    QualityWarning = manifest.QualityWarning,
-                    PublishWarning = published.Warning
-                };
-            }
 
             try
             {
@@ -86,25 +72,70 @@ namespace PotPlayerAiSubtitle
                 List<SubtitleCue> cues = SrtFile.Read(sourcePath);
                 if (cues.Count == 0) throw new InvalidDataException("没有从源语言字幕中读取到有效对白。");
 
-                TranslationState state = AtomicJson.Read<TranslationState>(translationStatePath, new TranslationState());
+                TranslationCache cache = new TranslationCache(cacheDir, config, cues);
+                Directory.CreateDirectory(cache.DirectoryPath);
+                chinesePath = Path.Combine(cache.DirectoryPath, "zh-CN.srt");
+                bilingualPath = Path.Combine(cache.DirectoryPath, language + "-zh-CN.srt");
+                translationStatePath = cache.BaseStatePath;
+                string reviewWarning;
+                if (cache.TryReadComplete(chinesePath, bilingualPath, out reviewWarning))
+                {
+                    manifest.Status = "complete";
+                    manifest.TranslationModel = config.Model;
+                    AtomicJson.Write(manifestPath, manifest);
+                    Report("已命中字幕缓存", "字幕与当前模型、源字幕及处理策略一致。", 100);
+                    SubtitlePublishResult cached = SubtitlePublisher.Publish(config, FindMatchingCurrentMedia(fingerprint, mediaPath), sourcePath, chinesePath, bilingualPath);
+                    return new PipelineResult { Fingerprint = fingerprint, CacheHit = true,
+                        BilingualSubtitlePath = cached.BilingualSidecarPath ?? bilingualPath,
+                        QualityWarning = JoinWarnings(manifest.QualityWarning, reviewWarning), PublishWarning = cached.Warning,
+                        QualitySummary = ReadReviewSummary(cache.DirectoryPath) };
+                }
+                cache.Begin();
+                TranslationState state = AtomicJson.Read<TranslationState>(translationStatePath, new TranslationState()) ?? new TranslationState();
                 if (state.Translations == null) state.Translations = new Dictionary<string, string>();
                 if (state.Glossary == null) state.Glossary = new Dictionary<string, string>();
                 if (state.CompletedScenes == null) state.CompletedScenes = new List<int>();
 
-                bool completeAlready = cues.All(delegate(SubtitleCue cue) { return state.Translations.ContainsKey(cue.Id.ToString(CultureInfo.InvariantCulture)); });
+                bool isQuality = string.Equals(config.TranslationQuality, "quality", StringComparison.OrdinalIgnoreCase);
+
+                bool completeAlready = cues.All(delegate(SubtitleCue cue) { return TranslationCache.HasCue(state, cue.Id); });
                 if (!completeAlready)
                 {
-                    if (string.IsNullOrWhiteSpace(CredentialStore.ReadApiKey()))
+                    if (string.IsNullOrWhiteSpace(readApiKey()))
                     {
                         if (ensureApiKey == null || !ensureApiKey()) throw new InvalidOperationException("没有设置 DeepSeek API Key，任务已保留，可稍后继续。");
                     }
                     TranslateAllScenes(cues, state, translationStatePath, cancellation);
                 }
 
+                // The base remains immutable during polish/review; cancelling can resume the variant.
+                AtomicJson.Write(cache.BaseStatePath, state);
+                TranslationState variantState = AtomicJson.Read<TranslationState>(cache.StatePath, null);
+                if (File.Exists(cache.StatePath) && (variantState == null || variantState.Translations == null || variantState.Glossary == null || variantState.CompletedScenes == null))
+                    throw new InvalidDataException("译文版本断点损坏，已保留文件且未重新付费：" + cache.StatePath);
+                state = variantState ?? TranslationCache.Copy(state);
+                translationStatePath = cache.StatePath;
+                AtomicJson.Write(translationStatePath, state);
+                reviewWarning = null;
+                if (isQuality)
+                {
+                    TermIndex terms = TermIndexStore.Load(cacheDir);
+                    if (terms != null) TermIndexStore.Save(cache.DirectoryPath, terms);
+                    TranslationReview.SeedGlossary(config, cache.DirectoryPath, state);
+                    Report("正在重点复核", "全片规则检查；最多复核 6 个场景，修复有预算上限。", 94);
+                    TranslationReviewReport review = TranslationReview.Run(config, cache.DirectoryPath, cues, state, translationStatePath, cancellation, readApiKey(), detail => Report("正在重点复核", detail, 94));
+                    reviewWarning = review.Warning;
+                }
+                else
+                    ApplyFastTierPolish(cues, state, translationStatePath, cancellation);
+                AtomicJson.Write(translationStatePath, state);
+
                 Report("正在生成字幕文件", "同时保存简体中文和双语字幕。", 96);
                 SrtFile.Write(chinesePath, cues, state.Translations, false);
                 SrtFile.Write(bilingualPath, cues, state.Translations, true);
 
+                cache.Complete(chinesePath, bilingualPath, reviewWarning);
+                manifest.TranslationModel = config.Model;
                 manifest.Status = "complete";
                 manifest.UpdatedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
                 manifest.Error = null;
@@ -119,7 +150,8 @@ namespace PotPlayerAiSubtitle
                     Fingerprint = fingerprint,
                     BilingualSubtitlePath = published.BilingualSidecarPath ?? bilingualPath,
                     CacheHit = false,
-                    QualityWarning = manifest.QualityWarning,
+                    QualityWarning = JoinWarnings(manifest.QualityWarning, reviewWarning),
+                    QualitySummary = ReadReviewSummary(cache.DirectoryPath),
                     PublishWarning = published.Warning
                 };
             }
@@ -138,6 +170,62 @@ namespace PotPlayerAiSubtitle
                 manifest.UpdatedUtc = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
                 AtomicJson.Write(manifestPath, manifest);
                 throw;
+            }
+        }
+
+        private static string ReadReviewSummary(string directory)
+        {
+            var review = AtomicJson.Read<TranslationReviewReport>(Path.Combine(directory, "translation-quality-report.json"), null);
+            return review == null ? null : review.Summary;
+        }
+
+        private static string JoinWarnings(string a, string b)
+        {
+            return string.IsNullOrWhiteSpace(a) ? b : string.IsNullOrWhiteSpace(b) ? a : a + "；" + b;
+        }
+
+        private void ApplyFastTierPolish(List<SubtitleCue> cues, TranslationState state, string statePath, CancellationToken cancellation)
+        {
+            // 快速档的低成本译文校正：只对“残留源文 / 超长 / 极端重复”的少量字幕做一次定向修复。
+            List<int> defectIds = TranslationQualityCheck.FindDefectCueIds(cues, state.Translations);
+            if (defectIds.Count == 0) return;
+
+            Report("正在校正译文", string.Format(CultureInfo.InvariantCulture, "发现 {0} 条待修正，正在定向重译。", defectIds.Count), 94);
+            string key = readApiKey();
+            if (string.IsNullOrWhiteSpace(key)) return;
+
+            DeepSeekClient client = new DeepSeekClient(config, key);
+            int applied = 0;
+            int batchSize = Math.Max(1, config.SceneMaxCues);
+            for (int offset = 0; offset < defectIds.Count; offset += batchSize)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                List<int> batch = defectIds.GetRange(offset, Math.Min(batchSize, defectIds.Count - offset));
+                try
+                {
+                    Dictionary<string, string> repaired = client.RepairCues(cues, batch, config.ContextCueCount, state.Glossary, state.Translations, cancellation);
+                    foreach (KeyValuePair<string, string> item in repaired)
+                    {
+                        string existing;
+                        if (state.Translations.TryGetValue(item.Key, out existing) && string.Equals(existing, item.Value, StringComparison.Ordinal)) continue;
+                        SubtitleCue cue = cues.FirstOrDefault(c => c.Id.ToString(CultureInfo.InvariantCulture) == item.Key);
+                        string reason;
+                        if (cue == null || !TranslationQualityCheck.AcceptRepair(cue, existing, item.Value, null, out reason)) continue;
+                        state.Translations[item.Key] = item.Value;
+                        applied++;
+                    }
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    // 快速档不做质量兜底：修复失败也直接沿用原译文继续出片，仅记录日志。
+                    Logger.Write("Fast-tier translation polish failed: " + ex.Message);
+                }
+            }
+            if (applied > 0)
+            {
+                AtomicJson.Write(statePath, state);
+                Report("正在生成字幕文件", string.Format(CultureInfo.InvariantCulture, "已校正 {0} 条译文，其余沿用原译文。", applied), 95);
             }
         }
 
@@ -209,7 +297,7 @@ namespace PotPlayerAiSubtitle
         private void TranslateAllScenes(List<SubtitleCue> cues, TranslationState state, string statePath, CancellationToken cancellation)
         {
             List<SubtitleScene> scenes = SrtFile.BuildScenes(cues, config.SceneMaxCues, config.SceneMaxSeconds);
-            string key = CredentialStore.ReadApiKey();
+            string key = readApiKey();
             if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("DeepSeek API Key 不可用。");
             DeepSeekClient client = new DeepSeekClient(config, key);
 
@@ -220,7 +308,7 @@ namespace PotPlayerAiSubtitle
                 bool sceneDone = true;
                 for (int cueIndex = scene.StartCueIndex; cueIndex <= scene.EndCueIndex; cueIndex++)
                 {
-                    if (!state.Translations.ContainsKey(cues[cueIndex].Id.ToString(CultureInfo.InvariantCulture))) { sceneDone = false; break; }
+                    if (!TranslationCache.HasCue(state, cues[cueIndex].Id)) { sceneDone = false; break; }
                 }
                 if (sceneDone) continue;
 
@@ -241,6 +329,8 @@ namespace PotPlayerAiSubtitle
                         break;
                     }
                     catch (OperationCanceledException) { throw; }
+                    // The client already retried with a larger budget; do not repeat it unchanged.
+                    catch (TranslationOutputLimitException) { throw; }
                     catch (Exception ex)
                     {
                         lastError = ex;

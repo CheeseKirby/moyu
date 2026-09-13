@@ -104,7 +104,7 @@ namespace PotPlayerAiSubtitle
                 double gap = i > start ? (cues[i].Start - cues[i - 1].End).TotalSeconds : 0;
                 bool breakAtPause = count >= 12 && gap >= 4.0;
                 bool atLimit = count >= maxCues || duration >= maxSeconds;
-                if ((breakAtPause || atLimit) && i > start)
+                if (breakAtPause || atLimit)
                 {
                     int end = breakAtPause ? i - 1 : i;
                     scenes.Add(new SubtitleScene { Index = sceneIndex++, StartCueIndex = start, EndCueIndex = end });

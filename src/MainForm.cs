@@ -50,12 +50,15 @@ namespace PotPlayerAiSubtitle
         private readonly TextBox apiKeyBox;
         private readonly TextBox modelBox;
         private readonly SourceLanguageComboBox sourceLanguageBox;
+        private readonly TranslationQualityComboBox translationQualityBox;
         private readonly TextBox hubPathBox;
         private readonly Label apiStoredLabel;
         private readonly Label settingsStatusLabel;
         private readonly Button testButton;
         private readonly CheckBox monitorCheck;
         private readonly CheckBox startupCheck;
+        private readonly CheckBox thinkingCheck;
+        private readonly ReviewContextComboBox reviewContextBox;
 
         private PotPlayerMonitor monitor;
         private Thread workerThread;
@@ -215,6 +218,7 @@ namespace PotPlayerAiSubtitle
                     SubtitlePipelineRunner runner = new SubtitlePipelineRunner(jobConfig, progress, EnsureApiKey);
                     PipelineResult result = runner.Process(request.MediaPath, source.Token);
                     string completionDetail = "双语字幕已保存到视频旁，三种版本已归档到字幕库；字幕加载由 PotPlayer 负责。";
+                    if (!string.IsNullOrWhiteSpace(result.QualitySummary)) completionDetail = result.QualitySummary + " " + completionDetail;
                     string warning = CombineWarnings(result.QualityWarning, result.PublishWarning);
                     if (!string.IsNullOrWhiteSpace(warning))
                     {
@@ -363,12 +367,21 @@ namespace PotPlayerAiSubtitle
             apiUrlBox.Text = config.ApiBaseUrl;
             modelBox.Text = config.Model;
             sourceLanguageBox.SourceLanguage = config.SourceLanguage;
+            translationQualityBox.TranslationQuality = config.TranslationQuality;
             hubPathBox.Text = config.SubtitleHubPath;
             monitorCheck.Checked = config.MonitorPotPlayer;
             startupCheck.Checked = config.StartWithWindows;
+            thinkingCheck.Checked = config.EnableThinking;
+            reviewContextBox.Value = config.ReviewContextCount;
             bool stored = !string.IsNullOrWhiteSpace(CredentialStore.ReadApiKey());
             apiStoredLabel.Text = stored ? "已安全保存 API Key；不修改时可留空。" : "尚未保存 API Key。";
             apiStoredLabel.ForeColor = stored ? SuccessColor : WarningColor;
+        }
+
+        private void UpdateThinkingAvailability()
+        {
+            // Disable, rather than clear, the saved quality-tier preference.
+            thinkingCheck.Enabled = translationQualityBox.TranslationQuality == "quality";
         }
 
         private AppConfig ReadSettingsFromUi()
@@ -377,12 +390,15 @@ namespace PotPlayerAiSubtitle
             config.ApiBaseUrl = apiUrlBox.Text.Trim();
             config.Model = modelBox.Text.Trim();
             config.SourceLanguage = sourceLanguageBox.SourceLanguage;
+            config.TranslationQuality = translationQualityBox.TranslationQuality;
             if (string.IsNullOrWhiteSpace(hubPathBox.Text)) throw new InvalidOperationException("字幕库目录不能为空。");
             config.SubtitleHubPath = Path.GetFullPath(hubPathBox.Text.Trim());
             Directory.CreateDirectory(config.SubtitleHubPath);
             config.MonitorPotPlayer = monitorCheck.Checked;
             config.StartWithWindows = startupCheck.Checked;
-            config.UiSettingsVersion = 2;
+            config.EnableThinking = thinkingCheck.Checked;
+            config.ReviewContextCount = reviewContextBox.Value;
+            config.UiSettingsVersion = 3;
             ApiEndpoint.ChatCompletions(config.ApiBaseUrl);
             if (string.IsNullOrWhiteSpace(config.Model)) throw new InvalidOperationException("模型名称不能为空。");
             return config;
@@ -637,6 +653,33 @@ namespace PotPlayerAiSubtitle
                 return option == null ? "ja" : option.Code;
             }
             set { SelectedItem = SourceLanguages.Get(value); }
+        }
+    }
+
+    internal sealed class ReviewContextComboBox : ComboBox
+    {
+        private static readonly int[] Options = { 0, 4, 8, 12, 16 };
+
+        public ReviewContextComboBox()
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList;
+            foreach (int option in Options) Items.Add(option);
+            Value = 8;
+        }
+
+        public int Value
+        {
+            get
+            {
+                object selected = SelectedItem;
+                return selected is int ? (int)selected : 8;
+            }
+            set
+            {
+                foreach (object option in Items)
+                    if ((int)option == value) { SelectedItem = option; return; }
+                SelectedItem = (int)8;
+            }
         }
     }
 

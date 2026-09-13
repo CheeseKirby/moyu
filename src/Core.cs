@@ -27,7 +27,11 @@ namespace PotPlayerAiSubtitle
         public int SceneMaxCues { get; set; }
         public int SceneMaxSeconds { get; set; }
         public int ContextCueCount { get; set; }
+        public int ReviewContextCount { get; set; }
         public int ApiRetryCount { get; set; }
+        public string TranslationQuality { get; set; }
+        // User preference for quality-tier translation/review; ignored by the fast tier.
+        public bool EnableThinking { get; set; }
         public bool MonitorPotPlayer { get; set; }
         public bool StartWithWindows { get; set; }
         public int UiSettingsVersion { get; set; }
@@ -51,10 +55,13 @@ namespace PotPlayerAiSubtitle
                 SceneMaxCues = 35,
                 SceneMaxSeconds = 150,
                 ContextCueCount = 4,
+                ReviewContextCount = 8,
                 ApiRetryCount = 3,
+                TranslationQuality = "fast",
+                EnableThinking = false,
                 MonitorPotPlayer = true,
                 StartWithWindows = true,
-                UiSettingsVersion = 2
+                UiSettingsVersion = 3
             };
         }
 
@@ -80,7 +87,15 @@ namespace PotPlayerAiSubtitle
             if (loaded.SceneMaxCues < 10) loaded.SceneMaxCues = defaults.SceneMaxCues;
             if (loaded.SceneMaxSeconds < 30) loaded.SceneMaxSeconds = defaults.SceneMaxSeconds;
             if (loaded.ContextCueCount < 0) loaded.ContextCueCount = defaults.ContextCueCount;
+            if (loaded.ReviewContextCount < 0) loaded.ReviewContextCount = 0;
+            if (loaded.ReviewContextCount > 16) loaded.ReviewContextCount = 16;
             if (loaded.ApiRetryCount < 1) loaded.ApiRetryCount = defaults.ApiRetryCount;
+            string quality = TranslationQualities.Normalize(loaded.TranslationQuality);
+            if (!string.Equals(loaded.TranslationQuality, quality, StringComparison.Ordinal))
+            {
+                loaded.TranslationQuality = quality;
+                Save(loaded);
+            }
             if (loaded.UiSettingsVersion < 2)
             {
                 if (loaded.UiSettingsVersion < 1)
@@ -89,6 +104,12 @@ namespace PotPlayerAiSubtitle
                     loaded.StartWithWindows = true;
                 }
                 loaded.UiSettingsVersion = 2;
+                Save(loaded);
+            }
+            if (loaded.UiSettingsVersion < 3)
+            {
+                loaded.ReviewContextCount = 8;
+                loaded.UiSettingsVersion = 3;
                 Save(loaded);
             }
             return loaded;
@@ -210,7 +231,8 @@ namespace PotPlayerAiSubtitle
         {
             string directory = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            string temporary = path + ".tmp-" + Guid.NewGuid().ToString("N");
+            // A short sibling name avoids amplifying nested cache paths on .NET Framework.
+            string temporary = Path.Combine(directory ?? "", "." + Guid.NewGuid().ToString("N").Substring(0, 16) + ".tmp");
             string json = Serializer.Serialize(value);
             File.WriteAllText(temporary, json, new UTF8Encoding(false));
             try

@@ -140,7 +140,7 @@ namespace PotPlayerAiSubtitle
 
             FlowLayoutPanel settingsFlow = NewPageFlow();
             settingsFlow.Controls.Add(PageHeading("顺手的道具，不用反复操心。", "道具设置  /  语言、翻译服务与播放器联动，都在这里。"));
-            CardPanel serviceCard = NewCard(0, 0, 860, 266, Color.White);
+            CardPanel serviceCard = NewCard(0, 0, 860, 310, Color.White);
             serviceCard.Controls.Add(CreateLabel("翻译服务", 24, 18, 600, 27, 12F, FontStyle.Bold, TextColor));
             AddFieldLabel(serviceCard, "API 请求地址", 24, 57);
             apiUrlBox = new TextBox { AccessibleName = "API 请求地址" }; FrameInput(serviceCard, apiUrlBox, 24, 82, 810, true);
@@ -151,17 +151,30 @@ namespace PotPlayerAiSubtitle
             Button showKeyButton = CreateButton("显示", PageColor, MutedColor, 750, 165, 84, 42); AnchorRight(showKeyButton);
             showKeyButton.Click += delegate { apiKeyBox.UseSystemPasswordChar = !apiKeyBox.UseSystemPasswordChar; showKeyButton.Text = apiKeyBox.UseSystemPasswordChar ? "显示" : "隐藏"; };
             apiStoredLabel = CreateLabel("", 24, 226, 810, 23, 8.5F, FontStyle.Regular, MutedColor); Stretch(apiStoredLabel);
+            AddFieldLabel(serviceCard, "复核上下文长度", 24, 250);
+            reviewContextBox = new ReviewContextComboBox { Left = 24, Top = 276, Width = 250, Font = new Font(Font.FontFamily, 10F), AccessibleName = "复核上下文长度（质量档复核参考用）" };
+            serviceCard.Controls.Add(reviewContextBox);
+            Label reviewHint = CreateLabel("→   质量档复核用：更多前后文＝跨场景更一致；0＝不带上下文", 302, 278, 540, 22, 8.5F, FontStyle.Regular, MutedColor); Stretch(reviewHint);
+            serviceCard.Controls.Add(reviewHint);
             serviceCard.Controls.AddRange(new Control[] { showKeyButton, apiStoredLabel }); settingsFlow.Controls.Add(serviceCard);
 
-            CardPanel outputCard = NewCard(0, 0, 860, 216, Color.White);
+            CardPanel outputCard = NewCard(0, 0, 860, 326, Color.White);
             outputCard.Controls.Add(CreateLabel("语言与输出", 24, 18, 600, 27, 12F, FontStyle.Bold, TextColor));
             AddFieldLabel(outputCard, "视频源语言", 24, 59);
             sourceLanguageBox = new SourceLanguageComboBox { Left = 24, Top = 85, Width = 250, Font = new Font(Font.FontFamily, 10F), AccessibleName = "视频源语言，未选择时默认日语" };
             outputCard.Controls.Add(sourceLanguageBox);
             Label languageHint = CreateLabel("→   简体中文     /     不选择时默认日语", 302, 87, 510, 25, 9F, FontStyle.Regular, MutedColor); Stretch(languageHint); outputCard.Controls.Add(languageHint);
-            AddFieldLabel(outputCard, "字幕库目录", 24, 129);
-            hubPathBox = new TextBox { AccessibleName = "字幕库目录" }; FrameInput(outputCard, hubPathBox, 24, 154, 672, true);
-            Button chooseHubButton = CreateButton("选择目录", AccentSoft, AccentColor, 710, 154, 124, 42); AnchorRight(chooseHubButton); chooseHubButton.Click += ChooseHubClicked;
+            AddFieldLabel(outputCard, "翻译档位", 24, 129);
+            translationQualityBox = new TranslationQualityComboBox { Left = 24, Top = 155, Width = 250, Font = new Font(Font.FontFamily, 10F), AccessibleName = "翻译档位" };
+            outputCard.Controls.Add(translationQualityBox);
+            Label qualityHint = CreateLabel("→   快速档：优先出片速度；质量档：精译与复核", 302, 157, 560, 25, 9F, FontStyle.Regular, MutedColor); Stretch(qualityHint); outputCard.Controls.Add(qualityHint);
+            thinkingCheck = new CheckBox { Left = 24, Top = 191, Width = 810, Height = 26, Text = "重点复核启用深度思考（质量档，耗时更长）", ForeColor = TextColor, AccessibleName = "质量档深度思考，仅质量档可选" }; Stretch(thinkingCheck);
+            outputCard.Controls.Add(thinkingCheck);
+            translationQualityBox.SelectedIndexChanged += delegate { UpdateThinkingAvailability(); };
+            UpdateThinkingAvailability();
+            AddFieldLabel(outputCard, "字幕库目录", 24, 241);
+            hubPathBox = new TextBox { AccessibleName = "字幕库目录" }; FrameInput(outputCard, hubPathBox, 24, 266, 672, true);
+            Button chooseHubButton = CreateButton("选择目录", AccentSoft, AccentColor, 710, 266, 124, 42); AnchorRight(chooseHubButton); chooseHubButton.Click += ChooseHubClicked;
             outputCard.Controls.Add(chooseHubButton); settingsFlow.Controls.Add(outputCard);
 
             CardPanel backgroundCard = NewCard(0, 0, 860, 175, Color.White);
@@ -264,7 +277,8 @@ namespace PotPlayerAiSubtitle
         private void UpdateConfigurationSummary(AppConfig config)
         {
             languageSummaryButton.Text = SourceLanguages.Get(config.SourceLanguage).Name + " → 简体中文   更改";
-            modelSummaryLabel.Text = "翻译模型  " + config.Model; toolTips.SetToolTip(modelSummaryLabel, config.Model);
+            modelSummaryLabel.Text = "翻译模型  " + config.Model + "  ·  " + TranslationQualities.Get(config.TranslationQuality).Name;
+            toolTips.SetToolTip(modelSummaryLabel, config.Model);
         }
         private void EnableVideoDrop(Control control)
         {

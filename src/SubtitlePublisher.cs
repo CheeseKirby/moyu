@@ -27,7 +27,7 @@ namespace PotPlayerAiSubtitle
 
             string mediaName = Path.GetFileNameWithoutExtension(mediaPath);
             string safeName = MakeSafeFileName(mediaName);
-            string cacheDirectory = Path.GetDirectoryName(bilingualPath);
+            string cacheDirectory = SourceCacheDirectory(bilingualPath);
             string videoCacheDirectory = config.SourceLanguage == "ja" ? cacheDirectory : Directory.GetParent(cacheDirectory).FullName;
 
             if (config.CopyFinishedSubtitlesBesideMedia)
@@ -87,6 +87,24 @@ namespace PotPlayerAiSubtitle
             return result;
         }
 
+        private static string SourceCacheDirectory(string bilingualPath)
+        {
+            DirectoryInfo directory = new DirectoryInfo(Path.GetDirectoryName(bilingualPath));
+            DirectoryInfo parent = directory.Parent;
+            // Current variants: source/translations/base-hash/variant-hash. Legacy outputs stay flat.
+            if (parent != null && parent.Parent != null && parent.Parent.Parent != null
+                && parent.Parent.Name == "translations" && IsCacheKey(directory.Name) && IsCacheKey(parent.Name))
+                return parent.Parent.Parent.FullName;
+            return directory.FullName;
+        }
+
+        private static bool IsCacheKey(string value)
+        {
+            if (value.Length != 24) return false;
+            foreach (char c in value) if (!(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f')) return false;
+            return true;
+        }
+
         internal static bool IsGeneratedBilingual(string path, string videoCacheDirectory)
         {
             if (string.IsNullOrWhiteSpace(videoCacheDirectory) || !File.Exists(path)) return false;
@@ -95,6 +113,10 @@ namespace PotPlayerAiSubtitle
                 string generated = Path.Combine(SourceLanguages.CacheDirectory(videoCacheDirectory, language.Code),
                     language.Code + "-zh-CN.srt");
                 if (FilesEqual(path, generated)) return true;
+                string variants = Path.Combine(SourceLanguages.CacheDirectory(videoCacheDirectory, language.Code), "translations");
+                if (Directory.Exists(variants))
+                    foreach (string variant in Directory.GetFiles(variants, language.Code + "-zh-CN.srt", SearchOption.AllDirectories))
+                        if (FilesEqual(path, variant)) return true;
             }
             return false;
         }
