@@ -15,7 +15,7 @@ try {
         if (Test-Path -LiteralPath $result) { Get-Content -LiteralPath $result }
         if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $result)) { throw "$mode failed (exit $($process.ExitCode))." }
     }
-    foreach ($suite in @('translation', 'quality', 'ui', 'watcher', 'update')) {
+    foreach ($suite in @('translation', 'quality', 'evolution', 'ui', 'watcher', 'update')) {
         Write-Output "=== $suite ==="
         & (Join-Path $PSScriptRoot ("run-$suite-tests.ps1"))
     }

@@ -35,6 +35,15 @@ namespace PotPlayerAiSubtitle
     internal sealed class TranslationReviewReport
     {
         public string Version { get; set; }
+        public bool Intensive { get; set; }
+        public int CoveredCueCount { get; set; }
+        public string Phase { get; set; }
+        public bool ProcessComplete { get; set; }
+        public List<RefinementWindow> RefinementWindows { get; set; }
+        public Dictionary<string, string> FrozenTranslations { get; set; }
+        public Dictionary<string, string> PhaseTranslations { get; set; }
+        public int SearchAttempts { get; set; }
+        public string ReferenceWarning { get; set; }
         public string Signature { get; set; }
         public string BaselineHash { get; set; }
         public string GeneratedUtc { get; set; }
@@ -81,14 +90,19 @@ namespace PotPlayerAiSubtitle
         public List<TranslationChange> Changes { get; set; }
         public bool CanResume
         {
-            get { return !BudgetExhausted && RequestCount < RequestLimit && ReservedOutputTokens < OutputTokenLimit
+            get { if (Intensive) return !ProcessComplete && (RefinementWindows == null
+                    || !RefinementWindows.Any(w => w.Phase == Phase && w.Status != "succeeded")
+                    || RefinementWindows.Any(w => w.Phase == Phase && w.Status != "succeeded" && w.Status != "exhausted"));
+                return !BudgetExhausted && RequestCount < RequestLimit && ReservedOutputTokens < OutputTokenLimit
                 && ElapsedSeconds < TimeLimitSeconds && Windows != null && Windows.Any(w =>
                     (w.Status == "failed" && w.AttemptCount < 2)
                     || (w.Status == "skipped" && (w.Error == "missing-api-key" || w.Error == "circuit-open"))); }
         }
         public string Summary
         {
-            get { return "重点复核 " + ReviewedSceneCount + "/" + SelectedSceneCount + " 个场景（全片 " + TotalSceneCount
+            get { if (Intensive) return (ProcessComplete ? "全片精修流程完成" : "精修未完成") + "；覆盖 " + CoveredCueCount + "/" + TotalCueCount
+                    + " 条；采纳 " + FixedCount + " 项；待核对 " + NeedsSourceCheckCount + " 条；模型请求 " + RequestCount + " 次；搜索 " + SearchAttempts + " 次。";
+                return "重点复核 " + ReviewedSceneCount + "/" + SelectedSceneCount + " 个场景（全片 " + TotalSceneCount
                 + " 个）；采纳 " + FixedCount + " 条修改；请求 " + RequestCount + " 次。"; }
         }
     }
@@ -106,14 +120,14 @@ namespace PotPlayerAiSubtitle
             foreach (TermIndexEntry entry in index.Entries)
             {
                 if (!string.IsNullOrWhiteSpace(entry.Source) && !string.IsNullOrWhiteSpace(entry.Target))
-                    state.Glossary[entry.Source] = entry.Target;
+                    QualityPolicy.MergeGlossary(state, new Dictionary<string, string> { { entry.Source, entry.Target } });
                 // Map recognition variants to the canonical Chinese rendering so a same object
                 // stays consistent even when Whisper spelled the name differently.
                 if (entry.Variants != null)
                 {
                     foreach (string variant in entry.Variants)
-                        if (!string.IsNullOrWhiteSpace(variant) && !string.IsNullOrWhiteSpace(entry.Target) && !state.Glossary.ContainsKey(variant))
-                            state.Glossary[variant] = entry.Target;
+                        if (!string.IsNullOrWhiteSpace(variant) && !string.IsNullOrWhiteSpace(entry.Target) )
+                            QualityPolicy.MergeGlossary(state, new Dictionary<string, string> { { variant, entry.Target } });
                 }
             }
         }
@@ -122,6 +136,8 @@ namespace PotPlayerAiSubtitle
             TranslationState state, string statePath, CancellationToken cancellation, string apiKey = null, Action<string> progress = null)
         {
             cancellation.ThrowIfCancellationRequested();
+            if (QualityPolicy.IsIntensive(config))
+                return IntensiveReview.Run(config, cacheDir, cues, state, statePath, cancellation, apiKey, progress, null);
             TermIndex index = TermIndexStore.Load(cacheDir);
             if (index == null && state.Glossary != null)
                 index = new TermIndex { SourceLanguage = config.SourceLanguage,
@@ -175,6 +191,8 @@ namespace PotPlayerAiSubtitle
             }
             if (report.Finished) return report;
 
+            var references = new TranslationReferences(config, cacheDir, cues);
+            references.Prepare(state.Glossary, cancellation);
             Action save = delegate { AtomicJson.Write(reportPath, report); };
             ReviewBudget budget = new ReviewBudget(report, save);
             try
@@ -188,6 +206,7 @@ namespace PotPlayerAiSubtitle
                     // Only review uses optional thinking. Mechanical repairs stay inexpensive.
                     DeepSeekClient reviewer = new DeepSeekClient(config, key, config.EnableThinking, budget);
                     DeepSeekClient repairer = new DeepSeekClient(config, key, false, budget);
+                    reviewer.References = references; repairer.References = references; reviewer.GlossaryConflicts = state.GlossaryConflicts;
                     Repair("rules", report.InitialHardDefects.Take(RepairBatchSize).ToList(), null, repairer, cues, state,
                         statePath, config, index, report, budget, cancellation);
                     var allScenes = BuildReviewScenes(cues, config);
@@ -214,6 +233,11 @@ namespace PotPlayerAiSubtitle
                         catch (Exception ex) { window.Status = "failed"; window.Error = ex is InvalidDataException ? ex.Message : ex.GetType().Name; failures++; Logger.Write("Quality review failed: " + window.Error); }
                         budget.Checkpoint();
                     }
+                    foreach (var issue in report.Windows.SelectMany(w => w.Issues).Where(i => !i.NeedsSourceCheck && !string.IsNullOrWhiteSpace(i.SearchTerm)))
+                    {
+                        references.Search(issue.SearchTerm, cancellation);
+                        if (!references.Report.Evidence.Any(e => e.Term == issue.SearchTerm)) issue.NeedsSourceCheck = true;
+                    }
                     var suggestions = Suggestions(report);
                     var uncertainIds = new HashSet<int>(report.Windows.SelectMany(w => w.Issues).Where(i => i.NeedsSourceCheck).Select(i => i.CueId));
                     foreach (int id in uncertainIds) suggestions.Remove(id);
@@ -222,6 +246,8 @@ namespace PotPlayerAiSubtitle
                 }
                 cancellation.ThrowIfCancellationRequested();
                 Finish(report, cues, state, index);
+                report.SearchAttempts = references.Report.SearchAttempts; report.ReferenceWarning = references.Report.Warning;
+                if (!string.IsNullOrWhiteSpace(report.ReferenceWarning)) report.Warning = (report.Warning ?? "") + "；" + report.ReferenceWarning;
                 report.Finished = true;
                 return report;
             }

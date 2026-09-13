@@ -22,13 +22,14 @@ namespace PotPlayerAiSubtitle
         { this.report = report; this.save = save; previousSeconds = report.ElapsedSeconds; }
         public int RemainingMilliseconds
         {
-            get { return Math.Max(0, (int)((report.TimeLimitSeconds - previousSeconds - clock.Elapsed.TotalSeconds) * 1000)); }
+            get { return report.Intensive && report.TimeLimitSeconds == 0 ? int.MaxValue : (int)Math.Max(0, Math.Min(int.MaxValue, (report.TimeLimitSeconds - previousSeconds - clock.Elapsed.TotalSeconds) * 1000)); }
         }
         public void Reserve(int maxTokens, int inputCharacters)
         {
-            if (RemainingMilliseconds <= 0 || report.RequestCount >= report.RequestLimit
-                || report.ReservedOutputTokens + maxTokens > report.OutputTokenLimit
-                || inputCharacters > 60000 || report.InputCharacters + inputCharacters > 480000)
+            if (RemainingMilliseconds <= 0 || ((report.RequestLimit > 0 || !report.Intensive) && report.RequestCount >= report.RequestLimit)
+                || ((report.OutputTokenLimit > 0 || !report.Intensive) && (long)report.ReservedOutputTokens + maxTokens > report.OutputTokenLimit)
+                || inputCharacters > 60000 || (!report.Intensive && (long)report.InputCharacters + inputCharacters > 480000)
+                || (long)report.ReservedOutputTokens + maxTokens > int.MaxValue || (long)report.InputCharacters + inputCharacters > int.MaxValue)
                 throw new ReviewBudgetException("重点复核已到调用、时间或输出预算上限");
             report.RequestCount++;
             report.ReservedOutputTokens += maxTokens;

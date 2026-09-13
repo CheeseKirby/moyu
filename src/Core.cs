@@ -32,6 +32,16 @@ namespace PotPlayerAiSubtitle
         public string TranslationQuality { get; set; }
         // User preference for quality-tier translation/review; ignored by the fast tier.
         public bool EnableThinking { get; set; }
+        public string QualityMode { get; set; }
+        public bool IntensiveThinking { get; set; }
+        public string IntensiveModel { get; set; }
+        public bool EnableWebReference { get; set; }
+        public bool WebPrivacyAccepted { get; set; }
+        public string ReferenceSubtitlePath { get; set; }
+        public int IntensiveTimeLimitSeconds { get; set; }
+        public int IntensiveRequestLimit { get; set; }
+        public int IntensiveOutputTokenLimit { get; set; }
+        public int SearchRequestLimit { get; set; }
         public bool MonitorPotPlayer { get; set; }
         public bool StartWithWindows { get; set; }
         public int UiSettingsVersion { get; set; }
@@ -59,9 +69,11 @@ namespace PotPlayerAiSubtitle
                 ApiRetryCount = 3,
                 TranslationQuality = "fast",
                 EnableThinking = false,
+                QualityMode = "standard",
+                IntensiveThinking = true,
                 MonitorPotPlayer = true,
                 StartWithWindows = true,
-                UiSettingsVersion = 3
+                UiSettingsVersion = 4
             };
         }
 
@@ -112,6 +124,16 @@ namespace PotPlayerAiSubtitle
                 loaded.UiSettingsVersion = 3;
                 Save(loaded);
             }
+            if (loaded.UiSettingsVersion < 4)
+            {
+                loaded.QualityMode = "standard";
+                loaded.IntensiveThinking = true;
+                loaded.EnableWebReference = false;
+                loaded.UiSettingsVersion = 4;
+                Save(loaded);
+            }
+            loaded.QualityMode = string.Equals(loaded.QualityMode, "intensive", StringComparison.OrdinalIgnoreCase) ? "intensive" : "standard";
+            QualityPolicy.Validate(loaded);
             return loaded;
         }
 
@@ -185,12 +207,14 @@ namespace PotPlayerAiSubtitle
         public Dictionary<string, string> Translations { get; set; }
         public Dictionary<string, string> Glossary { get; set; }
         public List<int> CompletedScenes { get; set; }
+        public Dictionary<string, List<string>> GlossaryConflicts { get; set; }
 
         public TranslationState()
         {
             Translations = new Dictionary<string, string>();
             Glossary = new Dictionary<string, string>();
             CompletedScenes = new List<int>();
+            GlossaryConflicts = new Dictionary<string, List<string>>();
         }
     }
 

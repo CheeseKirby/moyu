@@ -11,8 +11,8 @@ namespace PotPlayerAiSubtitle
     // Source/ASR is deliberately shared. Translation variants never overwrite legacy artifacts.
     internal sealed class TranslationCache
     {
-        public const string BasePolicy = "base-2-nonthinking";
-        public const string ReviewPolicy = "review-3-bounded-sourceguard-targets";
+        public const string BasePolicy = "base-3-context-conflicts";
+        public const string ReviewPolicy = "review-5-verified-candidates";
         public string BaseKey { get; private set; }
         public string VariantKey { get; private set; }
         public string BaseStatePath { get; private set; }
@@ -28,7 +28,11 @@ namespace PotPlayerAiSubtitle
                 cues.Select(c => new object[] { c.Id, c.Start.Ticks, c.End.Ticks, c.Text }).ToArray() }));
             bool quality = string.Equals(config.TranslationQuality, "quality", StringComparison.OrdinalIgnoreCase);
             VariantKey = Hash(AtomicJson.Serialize(new object[] { BaseKey, ReviewPolicy, quality,
-                quality && config.EnableThinking, quality ? config.ReviewContextCount : 0,
+                quality && QualityPolicy.Thinking(config), quality ? config.ReviewContextCount : 0,
+                quality ? (QualityPolicy.IsIntensive(config) ? "intensive" : "standard") : "",
+                QualityPolicy.IsIntensive(config) ? config.IntensiveModel : "",
+                quality && config.EnableWebReference && config.WebPrivacyAccepted,
+                quality ? FileHash(config.ReferenceSubtitlePath) : "",
                 quality ? FileHash(TermIndexStore.PathFor(sourceDirectory)) : "" }));
             string baseDirectory = Path.Combine(sourceDirectory, "translations", BaseKey.Substring(0, 24));
             BaseStatePath = Path.Combine(baseDirectory, "base-state.json");
@@ -40,7 +44,8 @@ namespace PotPlayerAiSubtitle
             warning = null;
             TranslationCacheReceipt receipt = AtomicJson.Read<TranslationCacheReceipt>(ReceiptPath, null);
             if (receipt != null && receipt.Signature == VariantKey
-                && (receipt.StateHash != FileHash(StatePath) || receipt.ReportHash != FileHash(Path.Combine(DirectoryPath, "translation-quality-report.json"))))
+                && (receipt.StateHash != FileHash(StatePath) || receipt.ReportHash != FileHash(Path.Combine(DirectoryPath, "translation-quality-report.json"))
+                    || receipt.ReferenceHash != FileHash(Path.Combine(DirectoryPath, "translation-references.json"))))
                 throw new InvalidDataException("质量档缓存校验失败，已保留文件且未重新付费复核；请检查该版本缓存：" + DirectoryPath);
             if (receipt == null || receipt.Signature != VariantKey || !File.Exists(chinese) || !File.Exists(bilingual)
                 || !File.Exists(StatePath) || receipt.ChineseHash != FileHash(chinese)
@@ -64,13 +69,15 @@ namespace PotPlayerAiSubtitle
         {
             AtomicJson.Write(ReceiptPath, new TranslationCacheReceipt { Signature = VariantKey,
                 ChineseHash = FileHash(chinese), BilingualHash = FileHash(bilingual), StateHash = FileHash(StatePath),
-                ReportHash = FileHash(Path.Combine(DirectoryPath, "translation-quality-report.json")), Warning = warning });
+                ReportHash = FileHash(Path.Combine(DirectoryPath, "translation-quality-report.json")),
+                ReferenceHash = FileHash(Path.Combine(DirectoryPath, "translation-references.json")), Warning = warning });
         }
 
         public static TranslationState Copy(TranslationState state)
         {
             return new TranslationState { Translations = new Dictionary<string, string>(state.Translations),
-                Glossary = new Dictionary<string, string>(state.Glossary), CompletedScenes = new List<int>(state.CompletedScenes) };
+                Glossary = new Dictionary<string, string>(state.Glossary), CompletedScenes = new List<int>(state.CompletedScenes),
+                GlossaryConflicts = (state.GlossaryConflicts ?? new Dictionary<string, List<string>>()).ToDictionary(p => p.Key, p => new List<string>(p.Value)) };
         }
 
         public static bool HasCue(TranslationState state, int id)
@@ -86,7 +93,7 @@ namespace PotPlayerAiSubtitle
                 return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(text))).Replace("-", "").ToLowerInvariant();
         }
 
-        private static string FileHash(string file)
+        internal static string FileHash(string file)
         {
             if (!File.Exists(file)) return "";
             using (SHA256 sha = SHA256.Create())
@@ -102,6 +109,7 @@ namespace PotPlayerAiSubtitle
         public string BilingualHash { get; set; }
         public string StateHash { get; set; }
         public string ReportHash { get; set; }
+        public string ReferenceHash { get; set; }
         public string Warning { get; set; }
     }
 }

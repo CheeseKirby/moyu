@@ -59,6 +59,7 @@ $out = Join-Path $env:TEMP ('MoyuBuild-' + [guid]::NewGuid().ToString('N'))
 
 | 脚本 | 主要覆盖 |
 |---|---|
+| tests/run-evolution-tests.ps1 | 候选两阶段确认/收尾回退、精修预算/响应回放、术语冲突、搜索安全与参考对齐 |
 | tests/run-quality-tests.ps1 | 分阶段缓存、真实流水线调用、预算/超时/恢复、修改审计与源文疑义 |
 | tests/run-translation-tests.ps1 | 本机模拟接口、思考与截断、空响应、取消和日志保护 |
 | tests/run-ui-tests.ps1 | WinForms 页面、窗口行为、设置持久化、思考开关与截图 |
@@ -76,13 +77,24 @@ $out = Join-Path $env:TEMP ('MoyuBuild-' + [guid]::NewGuid().ToString('N'))
 - review-srt：基于 --srt 和 --base 冻结译文，仅做复核；--out 必须与基线目录分开，--ctx 默认 8，可用 --lang 指定源语言。
 - scripts/compare-recognition.ps1：手动比较识别路径；可能运行两次完整识别并调用术语接口，不是质量档有限复核的成本基准。
 
+新增独立付费验证脚本（默认不执行，必须显式确认）：
+
+~~~powershell
+./scripts/validate-live-translation.ps1 -Config ./Config/settings.json -Source '<源字幕.srt>' -Baseline '<冻结translation-state.json>' -Mode thinking -Language ja -ConfirmPaid
+~~~
+
+- Mode为base/refine/thinking；base只测不超过35条源字幕中的一个目标窗口，最前2条仅作前文；后两者分别关闭/开启精修思考。
+- 精修验证限600秒、100次模型请求、409,600输出预留；联网关闭，不自动生成/覆盖基线。上限不是预计金额。
+- 读取现有配置和Windows模型凭据但不保存配置，输出到独立Cache/LiveValidation随机目录；未完整结束时返回错误，不能自动重跑付费。
+- 桌面精修使用设置页配置；旧CLI参数不新增精修/搜索快捷开关，不能以review-srt默认标准流程冒充精修验证。
+
 具体参数以 src/Program.cs 的入口解析为准。真实报告含字幕正文和路径，保存在本地，公开文档只记录脱敏汇总。
 
 ## 更新与回退
 
-install-update.ps1 用于**已有本地安装**，不是通用首次安装器。它默认读取 Cache/Releases/1.1.0/package.json，包内必须包含主程序 exe、pdb 和对应 SHA-256。Git 仓库不附带该本地包；从源码首次安装请使用上面的构建方式。
+install-update.ps1 用于**已有本地安装**，不是通用首次安装器。它默认读取 Cache/Releases/1.2.0-rc.1/package.json，包内必须包含主程序 exe、pdb 和对应 SHA-256。Git 仓库不附带该本地包；从源码首次安装请使用上面的构建方式。
 
-已有本地验收包时，托盘 → 退出，再执行：
+1.2.0-rc.1是候选包，新增精修仍待质量转正。确认接受此边界并已有本地候选包时，托盘 → 退出，再执行：
 
 ~~~powershell
 ./install-update.ps1

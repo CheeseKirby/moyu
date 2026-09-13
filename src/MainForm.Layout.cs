@@ -177,6 +177,8 @@ namespace PotPlayerAiSubtitle
             Button chooseHubButton = CreateButton("选择目录", AccentSoft, AccentColor, 710, 266, 124, 42); AnchorRight(chooseHubButton); chooseHubButton.Click += ChooseHubClicked;
             outputCard.Controls.Add(chooseHubButton); settingsFlow.Controls.Add(outputCard);
 
+            BuildQualityOptions(settingsFlow);
+
             CardPanel backgroundCard = NewCard(0, 0, 860, 175, Color.White);
             backgroundCard.Controls.Add(CreateLabel("后台与隐私", 24, 18, 600, 27, 12F, FontStyle.Bold, TextColor));
             monitorCheck = new CheckBox { Left = 24, Top = 55, Width = 810, Height = 26, Text = "监控 PotPlayer 打开的视频，开始生成前先询问我", ForeColor = TextColor }; Stretch(monitorCheck);

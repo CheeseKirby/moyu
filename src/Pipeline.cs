@@ -23,17 +23,21 @@ namespace PotPlayerAiSubtitle
         private readonly IProgress<ProgressInfo> progress;
         private readonly Func<bool> ensureApiKey;
         private readonly Func<string> readApiKey;
+        private readonly Func<string, bool> confirmUnknown;
+        private IntensiveTaskLedger intensiveLedger;
 
-        public SubtitlePipelineRunner(AppConfig config, IProgress<ProgressInfo> progress, Func<bool> ensureApiKey, Func<string> readApiKey = null)
+        public SubtitlePipelineRunner(AppConfig config, IProgress<ProgressInfo> progress, Func<bool> ensureApiKey, Func<string> readApiKey = null, Func<string, bool> confirmUnknown = null)
         {
             this.config = config;
             this.progress = progress;
             this.ensureApiKey = ensureApiKey;
             this.readApiKey = readApiKey ?? CredentialStore.ReadApiKey;
+            this.confirmUnknown = confirmUnknown;
         }
 
         public PipelineResult Process(string mediaPath, CancellationToken cancellation)
         {
+            QualityPolicy.Validate(config, true);
             if (!File.Exists(mediaPath)) throw new FileNotFoundException("视频文件已经不存在。", mediaPath);
             Report("正在识别视频", "计算内容指纹；改名或移动不会改变这个身份。", 2);
             string fingerprint = ContentFingerprint.Compute(mediaPath);
@@ -91,7 +95,21 @@ namespace PotPlayerAiSubtitle
                         QualitySummary = ReadReviewSummary(cache.DirectoryPath) };
                 }
                 cache.Begin();
-                TranslationState state = AtomicJson.Read<TranslationState>(translationStatePath, new TranslationState()) ?? new TranslationState();
+                if (QualityPolicy.IsIntensive(config))
+                {
+                    intensiveLedger = new IntensiveTaskLedger(config, cache.DirectoryPath, cache.VariantKey, cancellation, confirmUnknown);
+                    cancellation = intensiveLedger.Token;
+                }
+                if (!File.Exists(translationStatePath) && (File.Exists(Path.Combine(cacheDir, "translation-state.json"))
+                    || Directory.GetFiles(Path.Combine(cacheDir, "translations"), "base-state.json", SearchOption.AllDirectories).Length > 0))
+                {
+                    if (confirmUnknown == null || !confirmUnknown("当前底稿策略或模型已变化，需要重新翻译并产生接口费用。旧字幕和缓存不会删除。是否开始新底稿？"))
+                        throw new InvalidOperationException("未确认新底稿的付费翻译；旧缓存已保留。");
+                }
+                TranslationState state = AtomicJson.Read<TranslationState>(translationStatePath, null);
+                if (File.Exists(translationStatePath) && (state == null || state.Translations == null || state.Glossary == null || state.CompletedScenes == null))
+                    throw new InvalidDataException("基础译文断点损坏，已停止以避免重复付费。");
+                state = state ?? new TranslationState();
                 if (state.Translations == null) state.Translations = new Dictionary<string, string>();
                 if (state.Glossary == null) state.Glossary = new Dictionary<string, string>();
                 if (state.CompletedScenes == null) state.CompletedScenes = new List<int>();
@@ -119,11 +137,16 @@ namespace PotPlayerAiSubtitle
                 reviewWarning = null;
                 if (isQuality)
                 {
+                    if (QualityPolicy.IsIntensive(config) && string.IsNullOrWhiteSpace(readApiKey()) && (ensureApiKey == null || !ensureApiKey()))
+                        throw new InvalidOperationException("精修需要模型密钥，底稿已保留。");
                     TermIndex terms = TermIndexStore.Load(cacheDir);
                     if (terms != null) TermIndexStore.Save(cache.DirectoryPath, terms);
                     TranslationReview.SeedGlossary(config, cache.DirectoryPath, state);
-                    Report("正在重点复核", "全片规则检查；最多复核 6 个场景，修复有预算上限。", 94);
-                    TranslationReviewReport review = TranslationReview.Run(config, cache.DirectoryPath, cues, state, translationStatePath, cancellation, readApiKey(), detail => Report("正在重点复核", detail, 94));
+                    string reviewStage = QualityPolicy.IsIntensive(config) ? "正在全片精修" : "正在重点复核";
+                    Report(reviewStage, QualityPolicy.IsIntensive(config) ? "全片覆盖、疑难裁决与一致性收尾；可以取消并保留断点。" : "全片规则检查；最多复核 6 个场景，修复有预算上限。", 94);
+                    TranslationReviewReport review = QualityPolicy.IsIntensive(config)
+                        ? IntensiveReview.Run(config, cache.DirectoryPath, cues, state, translationStatePath, cancellation, readApiKey(), detail => Report(reviewStage, detail, 94), intensiveLedger)
+                        : TranslationReview.Run(config, cache.DirectoryPath, cues, state, translationStatePath, cancellation, readApiKey(), detail => Report(reviewStage, detail, 94));
                     reviewWarning = review.Warning;
                 }
                 else
@@ -171,6 +194,7 @@ namespace PotPlayerAiSubtitle
                 AtomicJson.Write(manifestPath, manifest);
                 throw;
             }
+            finally { if (intensiveLedger != null) { intensiveLedger.Dispose(); intensiveLedger = null; } }
         }
 
         private static string ReadReviewSummary(string directory)
@@ -301,6 +325,7 @@ namespace PotPlayerAiSubtitle
             if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("DeepSeek API Key 不可用。");
             DeepSeekClient client = new DeepSeekClient(config, key);
 
+            client.TaskLedger = intensiveLedger;
             for (int i = 0; i < scenes.Count; i++)
             {
                 cancellation.ThrowIfCancellationRequested();
@@ -311,28 +336,38 @@ namespace PotPlayerAiSubtitle
                     if (!TranslationCache.HasCue(state, cues[cueIndex].Id)) { sceneDone = false; break; }
                 }
                 if (sceneDone) continue;
+                if (intensiveLedger != null)
+                {
+                    intensiveLedger.BeginOperation("base-" + scene.Index);
+                    if (!intensiveLedger.CanAttempt) throw new InvalidOperationException("场景翻译已达到两次实际请求上限，未重复付费。");
+                }
 
                 int percent = 45 + (int)(48.0 * i / Math.Max(1, scenes.Count));
                 Report("正在进行场景翻译", string.Format(CultureInfo.InvariantCulture, "场景 {0}/{1}，字幕 {2}-{3}，模型 {4}", i + 1, scenes.Count, cues[scene.StartCueIndex].Id, cues[scene.EndCueIndex].Id, config.Model), percent);
 
                 Exception lastError = null;
-                for (int attempt = 1; attempt <= config.ApiRetryCount; attempt++)
+                int retryLimit = intensiveLedger == null ? config.ApiRetryCount : 2;
+                for (int attempt = 1; attempt <= retryLimit; attempt++)
                 {
                     try
                     {
-                        TranslationResult result = client.TranslateScene(cues, scene, config.ContextCueCount, state.Glossary, cancellation);
+                        TranslationResult result = client.TranslateScene(cues, scene, config.ContextCueCount, state.Glossary, cancellation, state.Translations);
                         foreach (KeyValuePair<string, string> item in result.Translations) state.Translations[item.Key] = item.Value;
-                        foreach (KeyValuePair<string, string> item in result.GlossaryUpdates) state.Glossary[item.Key] = item.Value;
+                        QualityPolicy.MergeGlossary(state, result.GlossaryUpdates);
                         if (!state.CompletedScenes.Contains(scene.Index)) state.CompletedScenes.Add(scene.Index);
                         AtomicJson.Write(statePath, state);
+                        if (intensiveLedger != null) intensiveLedger.CommitResponse();
                         lastError = null;
                         break;
                     }
                     catch (OperationCanceledException) { throw; }
                     // The client already retried with a larger budget; do not repeat it unchanged.
                     catch (TranslationOutputLimitException) { throw; }
+                    catch (ReviewBudgetException) { throw; }
                     catch (Exception ex)
                     {
+                        if (intensiveLedger != null && intensiveLedger.State.UnknownRequest) throw;
+                        if (intensiveLedger != null) intensiveLedger.CommitResponse();
                         lastError = ex;
                         Logger.Write(string.Format(CultureInfo.InvariantCulture, "Scene {0} attempt {1}: {2}", scene.Index, attempt, ex.Message));
                         if (attempt < config.ApiRetryCount)

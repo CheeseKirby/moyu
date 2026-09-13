@@ -41,10 +41,14 @@ namespace PotPlayerAiSubtitle
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern void CredFree(IntPtr buffer);
 
-        public static string ReadApiKey()
+        public static string ReadApiKey() { return Read(TargetName); }
+        public static string ReadSearchKey() { return Read("Moyu.BraveSearch.ApiKey"); }
+        public static void SaveSearchKey(string key) { Save("Moyu.BraveSearch.ApiKey", key); }
+
+        private static string Read(string target)
         {
             IntPtr pointer;
-            if (!CredRead(TargetName, CredTypeGeneric, 0, out pointer)) return null;
+            if (!CredRead(target, CredTypeGeneric, 0, out pointer)) return null;
             try
             {
                 NativeCredential credential = (NativeCredential)Marshal.PtrToStructure(pointer, typeof(NativeCredential));
@@ -57,7 +61,8 @@ namespace PotPlayerAiSubtitle
             }
         }
 
-        public static void SaveApiKey(string apiKey)
+        public static void SaveApiKey(string apiKey) { Save(TargetName, apiKey); }
+        private static void Save(string target, string apiKey)
         {
             if (string.IsNullOrWhiteSpace(apiKey)) throw new ArgumentException("API Key 不能为空。");
             string value = apiKey.Trim();
@@ -66,7 +71,7 @@ namespace PotPlayerAiSubtitle
             {
                 NativeCredential credential = new NativeCredential();
                 credential.Type = CredTypeGeneric;
-                credential.TargetName = TargetName;
+                credential.TargetName = target;
                 credential.Comment = "魔芋字幕工具使用的 API Key";
                 credential.CredentialBlobSize = (uint)(value.Length * 2);
                 credential.CredentialBlob = blob;

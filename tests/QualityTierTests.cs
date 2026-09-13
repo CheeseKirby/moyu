@@ -28,7 +28,7 @@ internal static class QualityTierTests
             { "usage", new Dictionary<string, object> { { "prompt_tokens", 100 }, { "completion_tokens", 20 } } } });
     }
     private const string Clean = "{\"issues\":[]}";
-    private const string Issue = "{\"issues\":[{\"id\":1,\"kind\":\"meaning\",\"suggestion\":\"应为再见\",\"needs_source_check\":false}]}";
+    private const string Issue = "{\"issues\":[{\"id\":1,\"kind\":\"meaning\",\"evidence\":\"こんにちは\",\"suggestion\":\"应为再见\",\"needs_source_check\":false}]}";
     private const string Translation = "{\"translations\":[{\"id\":1,\"zh\":\"你好\"}]}";
     private const string Repair = "{\"translations\":[{\"id\":1,\"zh\":\"再见\"}]}";
 
@@ -159,7 +159,7 @@ internal static class QualityTierTests
             string media = Path.Combine(DirectoryFor("recovery-media"), "sample.mp4"); File.WriteAllText(media, Guid.NewGuid().ToString());
             string cacheDir = Path.Combine(StoragePaths.Cache, ContentFingerprint.Compute(media)); Directory.CreateDirectory(cacheDir);
             var cues = Cues(1); SrtFile.Write(Path.Combine(cacheDir, "ja.srt"), cues, null, false);
-            var runner = new SubtitlePipelineRunner(cfg, null, () => true, () => "fake-key");
+            var runner = new SubtitlePipelineRunner(cfg, null, () => true, () => "fake-key", message => true);
             Check(!runner.Process(media, CancellationToken.None).CacheHit, "Initial run unexpectedly cached");
             Check(!runner.Process(media, CancellationToken.None).CacheHit && server.Requests.Count == 3, "Failed-window rerun repaid base or blocked by receipt");
             Check(runner.Process(media, CancellationToken.None).CacheHit, "Recovered result did not commit");
@@ -195,7 +195,7 @@ internal static class QualityTierTests
             var cues = Cues(1); SrtFile.Write(Path.Combine(cacheDir, "ja.srt"), cues, null, false);
             File.WriteAllText(Path.Combine(cacheDir, "zh-CN.srt"), "legacy-do-not-touch"); File.WriteAllText(Path.Combine(cacheDir, "ja-zh-CN.srt"), "legacy-do-not-touch");
             AtomicJson.Write(Path.Combine(cacheDir, "manifest.json"), new JobManifest { RecognitionModel = "original-asr" });
-            var runner = new SubtitlePipelineRunner(cfg, null, () => true, () => "fake-key");
+            var runner = new SubtitlePipelineRunner(cfg, null, () => true, () => "fake-key", message => true);
             var fast = runner.Process(media, CancellationToken.None); Check(!fast.CacheHit && server.Requests.Count == 1, "Legacy translation wrongly reused");
             cfg.TranslationQuality = "quality";
             var quality = runner.Process(media, CancellationToken.None); Check(!quality.CacheHit && server.Requests.Count == 2, "Fast-to-quality no-op or repaid base");
@@ -231,7 +231,7 @@ internal static class QualityTierTests
             string cacheDir = SourceLanguages.CacheDirectory(videoCache, language); Directory.CreateDirectory(cacheDir);
             var cues = Cues(1); cues[0].Text = language == "en" ? "Hello" : "안녕하세요";
             SrtFile.Write(Path.Combine(cacheDir, language + ".srt"), cues, null, false);
-            var runner = new SubtitlePipelineRunner(cfg, null, () => true, () => "fake-key");
+            var runner = new SubtitlePipelineRunner(cfg, null, () => true, () => "fake-key", message => true);
             var result = runner.Process(media, CancellationToken.None); server.Complete();
             Check(!result.CacheHit && File.Exists(result.BilingualSubtitlePath), "Non-Japanese variant failed");
             Check(SubtitlePublisher.IsGeneratedBilingual(result.BilingualSubtitlePath, videoCache), "Nested non-Japanese ownership not recognized");

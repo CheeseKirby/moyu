@@ -215,7 +215,18 @@ namespace PotPlayerAiSubtitle
                     IProgress<ProgressInfo> progress = new Progress<ProgressInfo>(UpdateProgress);
                     AppConfig jobConfig = AppConfig.Load();
                     jobConfig.SourceLanguage = request.SourceLanguage;
-                    SubtitlePipelineRunner runner = new SubtitlePipelineRunner(jobConfig, progress, EnsureApiKey);
+                    if (jobConfig.TranslationQuality == "quality" && !string.IsNullOrWhiteSpace(jobConfig.ReferenceSubtitlePath)
+                        && !ConfirmQualityAction("请确认本地参考字幕属于当前作品，时间轴对应。\n视频：" + Path.GetFileName(request.MediaPath)
+                            + "\n参考：" + jobConfig.ReferenceSubtitlePath + "\n更换作品时请清空或重新选择；是否继续？"))
+                        throw new OperationCanceledException("未确认参考字幕对应作品。");
+                    if (QualityPolicy.IsIntensive(jobConfig) && !ConfirmQualityAction("即将全片精修。模型：" + (string.IsNullOrWhiteSpace(jobConfig.IntensiveModel) ? jobConfig.Model : jobConfig.IntensiveModel)
+                        + "；思考：" + (jobConfig.IntensiveThinking ? "开启" : "关闭") + "；联网：" + (jobConfig.EnableWebReference ? "开启" : "关闭")
+                        + "；源语言：" + jobConfig.SourceLanguage + "；请求上限：" + (jobConfig.IntensiveRequestLimit == 0 ? "不限" : jobConfig.IntensiveRequestLimit.ToString())
+                        + "；输出token预留上限：" + (jobConfig.IntensiveOutputTokenLimit == 0 ? "不限" : jobConfig.IntensiveOutputTokenLimit.ToString())
+                        + "；搜索上限：" + QualityPolicy.SearchLimit(jobConfig)
+                        + "。" + (jobConfig.IntensiveTimeLimitSeconds == 0 ? "未设累计时长上限，可能显著增加耗时与费用。" : "累计活跃时限：" + jobConfig.IntensiveTimeLimitSeconds + "秒。") + "是否开始？"))
+                        throw new OperationCanceledException("用户未确认精修，未开始付费请求。");
+                    SubtitlePipelineRunner runner = new SubtitlePipelineRunner(jobConfig, progress, EnsureApiKey, null, ConfirmQualityAction);
                     PipelineResult result = runner.Process(request.MediaPath, source.Token);
                     string completionDetail = "双语字幕已保存到视频旁，三种版本已归档到字幕库；字幕加载由 PotPlayer 负责。";
                     if (!string.IsNullOrWhiteSpace(result.QualitySummary)) completionDetail = result.QualitySummary + " " + completionDetail;
@@ -371,7 +382,7 @@ namespace PotPlayerAiSubtitle
             hubPathBox.Text = config.SubtitleHubPath;
             monitorCheck.Checked = config.MonitorPotPlayer;
             startupCheck.Checked = config.StartWithWindows;
-            thinkingCheck.Checked = config.EnableThinking;
+            LoadQualityOptions(config);
             reviewContextBox.Value = config.ReviewContextCount;
             bool stored = !string.IsNullOrWhiteSpace(CredentialStore.ReadApiKey());
             apiStoredLabel.Text = stored ? "已安全保存 API Key；不修改时可留空。" : "尚未保存 API Key。";
@@ -382,6 +393,7 @@ namespace PotPlayerAiSubtitle
         {
             // Disable, rather than clear, the saved quality-tier preference.
             thinkingCheck.Enabled = translationQualityBox.TranslationQuality == "quality";
+            UpdateQualityOptionsAvailability();
         }
 
         private AppConfig ReadSettingsFromUi()
@@ -396,9 +408,9 @@ namespace PotPlayerAiSubtitle
             Directory.CreateDirectory(config.SubtitleHubPath);
             config.MonitorPotPlayer = monitorCheck.Checked;
             config.StartWithWindows = startupCheck.Checked;
-            config.EnableThinking = thinkingCheck.Checked;
+            ReadQualityOptions(config);
             config.ReviewContextCount = reviewContextBox.Value;
-            config.UiSettingsVersion = 3;
+            config.UiSettingsVersion = 4;
             ApiEndpoint.ChatCompletions(config.ApiBaseUrl);
             if (string.IsNullOrWhiteSpace(config.Model)) throw new InvalidOperationException("模型名称不能为空。");
             return config;
@@ -420,6 +432,12 @@ namespace PotPlayerAiSubtitle
             try
             {
                 AppConfig config = ReadSettingsFromUi();
+                if (config.EnableWebReference && !config.WebPrivacyAccepted)
+                {
+                    if (MessageBox.Show(this, "联网查证会将术语、源语言与必要短片段发送给 Brave Search；源文与选取的参考资料会发送给翻译服务。不会发送整份字幕到搜索服务。是否启用？", "联网参考与隐私", MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes) return;
+                    config.WebPrivacyAccepted = true;
+                }
+                if (!string.IsNullOrWhiteSpace(searchKeyBox.Text)) { CredentialStore.SaveSearchKey(searchKeyBox.Text); searchKeyBox.Clear(); }
                 if (!string.IsNullOrWhiteSpace(apiKeyBox.Text)) { CredentialStore.SaveApiKey(apiKeyBox.Text); apiKeyBox.Clear(); }
                 AppConfig.Save(config);
                 StartupManager.SetEnabled(config.StartWithWindows);

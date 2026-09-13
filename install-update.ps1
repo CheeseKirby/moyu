@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop
 Import-Module Microsoft.PowerShell.Management -ErrorAction Stop
 $root = [IO.Path]::GetFullPath($PSScriptRoot)
-if (-not $PackageDirectory) { $PackageDirectory = Join-Path $root 'Cache/Releases/1.1.0' }
+if (-not $PackageDirectory) { $PackageDirectory = Join-Path $root 'Cache/Releases/1.2.0-rc.1' }
 $PackageDirectory = [IO.Path]::GetFullPath($PackageDirectory)
 $manifest = Get-Content -LiteralPath (Join-Path $PackageDirectory 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $names = @('AI-Subtitle-Worker.exe', 'AI-Subtitle-Worker.pdb')
@@ -17,7 +17,7 @@ foreach ($name in $names) {
 if (Get-Process -Name 'AI-Subtitle-Worker' -ErrorAction SilentlyContinue) {
     throw '魔芋仍在运行。请先通过托盘菜单完全退出，再重新运行安装器；不会强制关闭程序。'
 }
-$backup = Join-Path $root ('Cache/Rollback-1.1.0-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$backup = Join-Path $root ('Cache/Rollback-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 if (-not ([IO.Path]::GetFullPath($backup)).StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw '备份路径超出项目目录。' }
 New-Item -ItemType Directory -Path $backup | Out-Null
 $configPath = Join-Path $root 'Config/settings.json'

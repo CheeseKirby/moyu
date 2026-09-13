@@ -176,11 +176,39 @@ internal static class WorkspaceUiTests
         Control language = (Control)Field(form, "sourceLanguageBox");
         Check(language.Width >= 200, "Language selector collapsed");
     }
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetProcessDPIAware();
+    private static int CheckQualityDpi()
+    {
+        SetProcessDPIAware(); StoragePaths.Ensure();
+        var config=AppConfig.CreateDefault(); config.MonitorPotPlayer=false; config.StartWithWindows=false; config.TranslationQuality="quality"; config.QualityMode="intensive"; AppConfig.Save(config);
+        Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
+        using(var form=new MainForm(true,false,null))
+        {
+            form.Shown -= (EventHandler)Delegate.CreateDelegate(typeof(EventHandler), form, typeof(MainForm).GetMethod("FormShown", Flags));
+            form.ShowInTaskbar=false; form.StartPosition=FormStartPosition.Manual; form.Location=new Point(-32000,-32000); form.Show();
+            var tabs=(TabControl)Field(form,"tabs"); tabs.SelectedIndex=1;
+            var mode=(ComboBox)Field(form,"qualityModeBox"); var limits=new[]{"intensiveMinutesBox","intensiveRequestsBox","intensiveTokensBox","searchLimitBox"};
+            foreach(bool minimum in new[]{false,true})
+            {
+                if(minimum) form.Size=form.MinimumSize;
+                ((FlowLayoutPanel)tabs.SelectedTab.Controls[0]).ScrollControlIntoView(mode.Parent); Pump(200);
+                int edge=0;
+                foreach(string name in limits) {var c=(Control)Field(form,name); Check(c.Left>=edge && c.Right<=c.Parent.ClientSize.Width-12,"DPI budget overlap: "+name); edge=c.Right+4;}
+                Check(((CheckBox)Field(form,"thinkingCheck")).Checked,"DPI intensive preference missing");
+                Capture(form,minimum?"quality-dpi-min":"quality-dpi");
+            }
+            using(var graphics=form.CreateGraphics()) Console.WriteLine("PASS quality options at actual desktop DPI "+graphics.DpiX+", normal/minimum bounds and scroll");
+            typeof(MainForm).GetField("allowClose",Flags).SetValue(form,true); form.Close();
+        }
+        return 0;
+    }
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
+            if (args.Length > 0 && args[0] == "--quality-dpi") return CheckQualityDpi();
             StoragePaths.Ensure();
             AppConfig config = AppConfig.CreateDefault();
             config.MonitorPotPlayer = false; config.StartWithWindows = false;
@@ -271,6 +299,22 @@ internal static class WorkspaceUiTests
                 Check(thinking.Enabled && !thinking.Checked, "Quality thinking cannot be disabled persistently");
                 quality.TranslationQuality = "fast";
                 Console.WriteLine("PASS quality-only thinking switch, on/off persistence and preference preservation across tiers");
+                quality.TranslationQuality = "quality";
+                var mode = (ComboBox)Field(form, "qualityModeBox");
+                var model = (TextBox)Field(form, "intensiveModelBox");
+                var web = (CheckBox)Field(form, "webReferenceCheck");
+                mode.SelectedIndex = 1; Check(thinking.Checked && model.Enabled, "Intensive thinking default missing");
+                thinking.Checked = false; mode.SelectedIndex = 0; Check(!thinking.Checked && !model.Enabled, "Standard preference lost");
+                thinking.Checked = true; mode.SelectedIndex = 1; Check(!thinking.Checked, "Intensive preference lost");
+                model.Text = "review-test-model"; ((NumericUpDown)Field(form, "intensiveRequestsBox")).Value = 17;
+                AppConfig.Save((AppConfig)Call(form, "ReadSettingsFromUi")); Call(form, "LoadSettingsIntoUi");
+                Check(mode.SelectedIndex == 1 && model.Text == "review-test-model" && !thinking.Checked, "Intensive options failed roundtrip");
+                Check(((NumericUpDown)Field(form, "intensiveRequestsBox")).Value == 17, "Limit lost");
+                ((FlowLayoutPanel)tabs.SelectedTab.Controls[0]).ScrollControlIntoView(mode.Parent); Capture(form, "settings-intensive");
+                quality.TranslationQuality = "fast"; Check(!mode.Enabled && !model.Enabled && !web.Enabled, "Fast tier permits quality settings");
+                quality.TranslationQuality = "quality"; mode.SelectedIndex = 0; Check(thinking.Checked, "Separate thinking preferences not preserved");
+                quality.TranslationQuality = "fast";
+                Console.WriteLine("PASS quality schemes, separate thinking, limits, model persistence and fast-tier isolation");
                 AppConfig saved = (AppConfig)Call(form, "ReadSettingsFromUi");
                 // Use a fresh missing hub below; ReadSettingsFromUi legitimately creates the configured output directory.
                 saved.SubtitleHubPath = Path.Combine(StoragePaths.Root, "missing-hub"); AppConfig.Save(saved);
@@ -297,6 +341,9 @@ internal static class WorkspaceUiTests
                 Check(list.Columns.Cast<ColumnHeader>().Sum(delegate(ColumnHeader column) { return column.Width; }) <= list.ClientSize.Width, "Library requires horizontal scrolling");
                 CheckNavigation(form, tabs, 1); CheckSettingsBounds(form); Capture(form, "settings-min");
                 FlowLayoutPanel settingsFlow = (FlowLayoutPanel)tabs.SelectedTab.Controls[0];
+                settingsFlow.ScrollControlIntoView(((ComboBox)Field(form, "qualityModeBox")).Parent); Capture(form, "settings-intensive-min");
+                var lastLimit = (NumericUpDown)Field(form, "searchLimitBox");
+                Check(lastLimit.Right <= lastLimit.Parent.ClientSize.Width - 20, "Quality budgets overflow minimum window");
                 settingsFlow.ScrollControlIntoView(((CheckBox)Field(form, "startupCheck")).Parent); Capture(form, "settings-min-bottom");
                 CheckNavigation(form, tabs, 0);
                 ((Label)Field(form, "detectedNameLabel")).Text = Path.GetFileName(other);

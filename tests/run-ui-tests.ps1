@@ -12,3 +12,8 @@ $process = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru -Wait -Red
 Get-Content -LiteralPath $result
 Write-Output "UI test output and window previews: $qa"
 if ($process.ExitCode -ne 0) { throw 'UI workspace tests failed.' }
+
+$dpiResult = Join-Path $qa "dpi-result.txt"
+$dpiProcess = Start-Process -FilePath $exe -ArgumentList "--quality-dpi" -WindowStyle Hidden -PassThru -Wait -RedirectStandardOutput $dpiResult
+Get-Content -LiteralPath $dpiResult
+if ($dpiProcess.ExitCode -ne 0) { throw "Quality DPI tests failed." }
